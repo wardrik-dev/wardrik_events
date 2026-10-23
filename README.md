@@ -14,11 +14,11 @@ end
 
 ## Start it
 
-Add `WardrikEvents` to your supervision tree with a [WardrikStore](https://hexdocs.pm/wardrik_store)
+Add `WardrikEvents` to your supervision tree, after a [WardrikStore](https://hexdocs.pm/wardrik_store)
 to keep the logs in, and give it to each [WardrikCore](https://hexdocs.pm/wardrik_core) agent:
 
 ```elixir
-store = WardrikStore.EKV.new(name: :my_app, data_dir: "/var/lib/my_app")
+store = WardrikStore.ETS.new(name: MyApp.Store)
 
 children = [
   {WardrikStore, store},
@@ -34,10 +34,14 @@ WardrikCore.start_agent(
 
 | Key | Takes | Unless set |
 | --- | --- | --- |
-| `name` | the name you read the events by | required |
+| `name` | the name you read the events by, and the only one you need | required |
 | `store` | the `WardrikStore` to keep the logs in | required |
 | `deployment` | the deployment's name, in each event's `source` | `"local"` |
 | `retention` | the days events are kept, or `:infinity` | 30 |
+
+`WardrikStore.ETS` keeps events in memory, for development and tests. To keep them on disk, use
+`WardrikStore.EKV`, with the `ekv` dependency. Every function takes the name you gave, and raises
+saying so where it isn't started.
 
 ## What an agent writes
 
@@ -100,8 +104,8 @@ subscribes before it reads back, and drops what it already handed over.
 
 ## Follow it into your app
 
-A listener hands each event to your module, with the cursor past it. Save the cursor with what you
-did, and it carries on from there after a restart:
+A listener hands each event to your module, with the cursor past it, as text. Save the cursor with
+what you did, and it carries on from there after a restart:
 
 ```elixir
 defmodule MyApp.Runs do
@@ -111,7 +115,7 @@ defmodule MyApp.Runs do
   def handle(event, listener) do
     MyApp.Repo.transaction(fn ->
       MyApp.Repo.insert_all("agent_runs", [MyApp.Runs.row(event)], on_conflict: :nothing)
-      MyApp.Cursors.put!("runs", WardrikEvents.Cursor.encode(listener.cursor))
+      MyApp.Cursors.put!("runs", listener.cursor)
     end)
 
     :ok

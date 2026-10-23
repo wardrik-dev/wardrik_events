@@ -10,7 +10,7 @@ defmodule WardrikEvents.Listener do
         def handle(event, listener) do
           MyApp.Repo.transaction(fn ->
             MyApp.Repo.insert_all("agent_events", [MyApp.Runs.row(event)], on_conflict: :nothing)
-            MyApp.Cursors.put!("runs", WardrikEvents.Cursor.encode(listener.cursor))
+            MyApp.Cursors.put!("runs", listener.cursor)
           end)
 
           :ok
@@ -39,7 +39,7 @@ defmodule WardrikEvents.Listener do
   defstruct [:events, :cursor, :options]
 
   @typedoc "The events it reads, the cursor past the event being handled, and its options."
-  @type t() :: %__MODULE__{events: atom(), cursor: Cursor.t() | nil, options: keyword()}
+  @type t() :: %__MODULE__{events: atom(), cursor: String.t() | nil, options: keyword()}
 
   @doc "Does what your app does with `event`, and returns `:ok` once it's done."
   @callback handle(CloudEvent.t(), t()) :: :ok
@@ -83,7 +83,7 @@ defmodule WardrikEvents.Listener do
       )
 
     Enum.each(stream, fn {event, cursor} ->
-      :ok = module.handle(event, %{listener | cursor: cursor})
+      :ok = module.handle(event, %{listener | cursor: Cursor.encode(cursor)})
     end)
   end
 end

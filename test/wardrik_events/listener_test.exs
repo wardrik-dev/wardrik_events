@@ -26,7 +26,7 @@ defmodule WardrikEvents.ListenerTest do
       if Agent.get_and_update(saved, &failing(&1, event["sequence"])) do
         :error
       else
-        Agent.update(saved, &%{&1 | cursor: Cursor.encode(listener.cursor)})
+        Agent.update(saved, &%{&1 | cursor: listener.cursor})
         send(listener.options[:test], {:handled, event["sequence"]})
         :ok
       end
@@ -48,10 +48,18 @@ defmodule WardrikEvents.ListenerTest do
       {Told, events: events, resources: ["acme/*"], after: Cursor.encode(%{}), test: self()}
     )
 
-    assert_receive {:handled, "000000000001", %{"acme/triage" => 1}}
+    assert_receive {:handled, "000000000001", cursor}
+    assert Cursor.decode(cursor) == {:ok, %{"acme/triage" => 1}}
 
     stopped(events, "acme/triage")
-    assert_receive {:handled, "000000000002", %{"acme/triage" => 2}}
+    assert_receive {:handled, "000000000002", cursor}
+    assert Cursor.decode(cursor) == {:ok, %{"acme/triage" => 2}}
+  end
+
+  test "says which events aren't started" do
+    assert_raise ArgumentError, ~r/^MyApp.Missing isn't started/, fn ->
+      WardrikEvents.head(MyApp.Missing, ["*"])
+    end
   end
 
   test "carries on from the cursor it saved after a handle that failed", %{events: events} do

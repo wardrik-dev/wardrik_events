@@ -199,8 +199,8 @@ defmodule WardrikEvents do
       audit: WardrikStore.scope(store, "wardrik_audit"),
       deployment: Keyword.fetch!(opts, :deployment),
       retention: Keyword.fetch!(opts, :retention),
-      heads: Module.concat(name, Heads),
-      group: Module.concat(name, Group)
+      heads: Module.concat(name, "Heads"),
+      group: Module.concat(name, "Group")
     }
 
     children = [
@@ -262,7 +262,14 @@ defmodule WardrikEvents do
     end
   end
 
-  defp settings(events), do: Heads.settings(Module.concat(events, Heads))
+  defp settings(events) do
+    Heads.settings(Module.concat(events, "Heads"))
+  rescue
+    ArgumentError ->
+      reraise ArgumentError,
+              "#{inspect(events)} isn't started. Add {WardrikEvents, name: #{inspect(events)}, store: store} to your supervision tree, ahead of what uses it.",
+              __STACKTRACE__
+  end
 
   defp after_cursor(nil), do: {:ok, %{}}
   defp after_cursor(text), do: Cursor.decode(text)
