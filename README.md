@@ -168,6 +168,16 @@ WardrikEvents.Timeline.items(timeline)
 To keep a view current, fold each event the stream brings into the same state. Write your own
 with the `WardrikEvents.View` behaviour.
 
+## Write your own events
+
+A host writes what it does to an agent into the agent's log, as core's events are written: kept,
+sent to subscribers, and folded into its activity. Each is a type of the protocol's:
+
+```elixir
+data = %{"trigger" => %{"name" => "daily"}, "status" => "asked"}
+:ok = WardrikEvents.append(MyApp.Events, "acme/digest", {"trigger.fired", "triggers/daily", data})
+```
+
 ## The audit
 
 The audit is one log for the deployment, of what people changed and who changed it:
