@@ -301,6 +301,24 @@ defmodule WardrikEvents.EncoderTest do
   end
 
   describe "tool calls and steps" do
+    test "end in an error when a call is stopped, or dies" do
+      call = %ToolCall{id: "c7", name: "block"}
+
+      assert %{
+               "type" => "wardrik.tool_call.completed",
+               "subject" => "tool_calls/c7",
+               "data" => %{
+                 "status" => "error",
+                 "error" => %{"message" => "The call was stopped before it finished."}
+               }
+             } = one(core([:tool_call, :exit], %{call: call, reason: :killed}))
+
+      assert %{"data" => %{"status" => "error", "error" => %{"message" => message}}} =
+               one(core([:tool_call, :exit], %{call: call, reason: :timeout}))
+
+      assert message =~ "timeout"
+    end
+
     test "start and complete, with what the tool cost", %{step: step} do
       call = %ToolCall{id: "c1", name: "github__list", arguments: %{"repo" => "wardrik"}}
 

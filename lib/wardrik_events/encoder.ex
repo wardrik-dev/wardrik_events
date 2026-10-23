@@ -77,6 +77,13 @@ defmodule WardrikEvents.Encoder do
   defp core([:step, :start], %{metadata: metadata}), do: step_started(metadata.step, metadata)
   defp core([:step, :stop], event), do: step_stopped(event.metadata.step, event)
   defp core([:step, :exception], event), do: step_failed(event.metadata.step, event)
+
+  defp core([:tool_call, :exit], %{metadata: %{call: call, reason: reason}}),
+    do: [
+      {"tool_call.completed", "tool_calls/" <> call.id,
+       error_status(%{"tool" => tool(call), "replayed" => false}, exited(reason))}
+    ]
+
   defp core(_internal, _event), do: []
 
   defp stopped(:ok, %{metadata: metadata}),
@@ -244,6 +251,9 @@ defmodule WardrikEvents.Encoder do
 
   defp error_status(data, reason),
     do: data |> Map.put("status", "error") |> Map.put("error", Value.error(reason))
+
+  defp exited(:killed), do: "The call was stopped before it finished."
+  defp exited(reason), do: {:exit, reason}
 
   defp agent_status(:waiting), do: "parked"
   defp agent_status(:idle), do: "idle"
