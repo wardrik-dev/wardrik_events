@@ -74,8 +74,18 @@ Some events are live: `message.delta`, `reasoning.delta`, `tool_call.progress` a
 Name the logs with patterns, where `*` stands for any run of characters and `?` for one:
 
 ```elixir
-{:ok, %{events: events, next: next}} = WardrikEvents.page(MyApp.Events, ["acme/*"], limit: 100)
-{:ok, %{events: more}} = WardrikEvents.page(MyApp.Events, ["acme/*"], after: next)
+WardrikEvents.page(MyApp.Events, ["acme/*"], limit: 100)
+#=> {:ok,
+#=>  %{
+#=>    events: [
+#=>      %{"type" => "wardrik.run.started", "subject" => "runs/0af76519...", "sequence" => "000000000041", ...},
+#=>      %{"type" => "wardrik.message.started", ...},
+#=>      ...
+#=>    ],
+#=>    next: "eyJhY21lL3RyaWFnZSI6NDN9"
+#=>  }}
+
+WardrikEvents.page(MyApp.Events, ["acme/*"], after: "eyJhY21lL3RyaWFnZSI6NDN9")
 ```
 
 Across several logs, events come oldest first. `next` is a cursor, the text to pass as `:after` to
