@@ -3,8 +3,8 @@ defmodule WardrikEvents.Activity do
   What an agent is doing now, since when, and how many messages wait behind it, as the protocol's
   `activity`.
 
-  It's every tool call running, oldest first, or else the one thing the last event that says so
-  set. A run ending makes it idle, with nothing in `doing`.
+  It's every tool call running, oldest first, each with when it began, or else the one thing the
+  last event that says so set. A run ending makes it idle, with nothing in `doing`.
   """
 
   @behaviour WardrikEvents.View
@@ -27,7 +27,7 @@ defmodule WardrikEvents.Activity do
     activity = %{activity | "pending" => max(activity["pending"] + queued(type, data), 0)}
     current = activity["doing"]
 
-    case doing(current, type, data) do
+    case doing(current, type, data, time) do
       ^current -> activity
       doing -> %{activity | "doing" => doing, "since" => time}
     end
@@ -43,15 +43,17 @@ defmodule WardrikEvents.Activity do
   defp queued("wardrik.run.cancelled", %{"dropped" => dropped}), do: -dropped
   defp queued(_type, _data), do: 0
 
-  defp doing(_doing, type, _data) when type in @ended, do: []
+  defp doing(_doing, type, _data, _time) when type in @ended, do: []
 
-  defp doing(doing, "wardrik.tool_call.started" = type, data) do
+  defp doing(doing, "wardrik.tool_call.started" = type, data, time) do
+    call = type |> described(data) |> Map.put("since", time)
+
     if calls?(doing),
-      do: doing ++ [described(type, data)],
-      else: [described(type, data)]
+      do: doing ++ [call],
+      else: [call]
   end
 
-  defp doing(doing, type, data) when type in @settled do
+  defp doing(doing, type, data, _time) when type in @settled do
     with true <- calls?(doing),
          [_running | _rest] = running <- Enum.reject(doing, &same_call?(&1, data)) do
       running
@@ -60,8 +62,8 @@ defmodule WardrikEvents.Activity do
     end
   end
 
-  defp doing(_doing, type, data) when type in @salient, do: [described(type, data)]
-  defp doing(doing, _type, _data), do: doing
+  defp doing(_doing, type, data, _time) when type in @salient, do: [described(type, data)]
+  defp doing(doing, _type, _data, _time), do: doing
 
   defp calls?([_call | _calls] = doing),
     do: Enum.all?(doing, &(&1["type"] == "wardrik.tool_call.started"))

@@ -38,12 +38,15 @@ defmodule WardrikEvents.ViewsTest do
           [
             event("run.started", run()),
             event("tool_call.started", tool("a")),
-            event("tool_call.started", tool("b"))
+            event("tool_call.started", tool("b"), "2026-10-22T09:00:05.000000Z")
           ],
           Activity
         )
 
       assert doing(activity) == ["wardrik.tool_call.started a", "wardrik.tool_call.started b"]
+
+      assert [%{"since" => @at}, %{"since" => later}] = activity["doing"]
+      assert later == "2026-10-22T09:00:05.000000Z"
 
       activity = Activity.handle_event(event("tool_call.completed", tool("a")), activity)
       assert doing(activity) == ["wardrik.tool_call.started b"]
