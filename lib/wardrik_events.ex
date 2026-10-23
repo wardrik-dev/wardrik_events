@@ -50,9 +50,35 @@ defmodule WardrikEvents do
 
     for cloud_event <- Encoder.encode(event, settings.deployment) do
       publish(settings, event.metadata.agent_id, cloud_event)
-      changed(settings, event, cloud_event)
+      changed(settings, event.metadata.agent_id, cloud_event, event.time, event.metadata[:span])
     end
 
+    :ok
+  end
+
+  @doc """
+  Writes `change`, a `{type, subject, data}` of the protocol's, into the agent `agent_id`'s log, as
+  core's events are written: kept, sent to subscribers, and folded into its activity. Takes
+  `:span`, the span it happened in.
+
+      :ok = WardrikEvents.append(MyApp.Events, "acme/triage", {"trigger.fired", "triggers/daily", data})
+  """
+  @spec append(atom(), String.t(), {String.t(), String.t(), map()}, keyword()) :: :ok
+  def append(events, agent_id, {type, subject, data}, opts \\ []) do
+    settings = settings(events)
+    time = DateTime.utc_now()
+    span = Keyword.get(opts, :span)
+
+    cloud_event =
+      CloudEvent.new(type, subject, data,
+        deployment: settings.deployment,
+        agent_id: agent_id,
+        time: time,
+        span: span
+      )
+
+    publish(settings, agent_id, cloud_event)
+    changed(settings, agent_id, cloud_event, time, span)
     :ok
   end
 
@@ -198,8 +224,7 @@ defmodule WardrikEvents do
   defp folded(view, {_log, _sequence, event} = entry, {state, cursor}),
     do: {view.handle_event(event, state), Reader.advanced(cursor, [entry])}
 
-  defp changed(settings, event, cloud_event) do
-    log = event.metadata.agent_id
+  defp changed(settings, log, cloud_event, time, span) do
     fold = &Activity.handle_event(cloud_event, &1)
 
     case Heads.update(settings.heads, {:activity, log}, Activity.init([]), fold) do
@@ -207,19 +232,23 @@ defmodule WardrikEvents do
         :ok
 
       {_before, activity} ->
-        Subscribers.publish(settings.group, log, activity_changed(settings, event, activity))
+        Subscribers.publish(
+          settings.group,
+          log,
+          activity_changed(settings, log, activity, time, span)
+        )
     end
   end
 
-  defp activity_changed(settings, event, activity) do
+  defp activity_changed(settings, log, activity, time, span) do
     CloudEvent.new(
       "activity.changed",
-      "agents/" <> event.metadata.agent_id,
+      "agents/" <> log,
       %{"activity" => activity},
       deployment: settings.deployment,
-      agent_id: event.metadata.agent_id,
-      time: event.time,
-      span: event.metadata[:span]
+      agent_id: log,
+      time: time,
+      span: span
     )
   end
 

@@ -53,6 +53,27 @@ defmodule WardrikEventsTest do
                     %{"type" => "wardrik.agent.stopped", "sequence" => "000000000001"}}
   end
 
+  test "writes what the host appends into an agent's log, as it writes core's", %{events: events} do
+    :ok = WardrikEvents.subscribe(events, ["acme/triage"])
+    data = %{"trigger" => %{"name" => "daily"}, "status" => "asked"}
+
+    assert :ok =
+             WardrikEvents.append(
+               events,
+               "acme/triage",
+               {"trigger.fired", "triggers/daily", data}
+             )
+
+    assert_receive {WardrikEvents, "acme/triage",
+                    %{
+                      "type" => "wardrik.trigger.fired",
+                      "subject" => "triggers/daily",
+                      "source" => "wardrik://test/agents/acme/triage",
+                      "sequence" => "000000000001",
+                      "data" => ^data
+                    }}
+  end
+
   test "takes the next number when another writer took this one", %{events: events, store: store} do
     stopped(events, "acme/triage")
     taken = WardrikStore.scope(store, "wardrik_events")

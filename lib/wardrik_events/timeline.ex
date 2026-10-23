@@ -57,6 +57,8 @@ defmodule WardrikEvents.Timeline do
   @spec touched(t()) :: [String.t()]
   def touched(%__MODULE__{touched: touched}), do: touched
 
+  defp fold(_t, "wardrik.conversation.cleared", _data, _event), do: %__MODULE__{}
+
   defp fold(
          t,
          "wardrik.message.created",

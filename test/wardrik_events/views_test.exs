@@ -91,6 +91,20 @@ defmodule WardrikEvents.ViewsTest do
   end
 
   describe "timeline" do
+    test "starts again where the conversation was cleared" do
+      timeline =
+        View.fold(
+          [
+            event("run.started", run()),
+            event("run.completed", run()),
+            event("conversation.cleared", %{"messages_before" => 2})
+          ],
+          Timeline
+        )
+
+      assert Timeline.items(timeline) == []
+    end
+
     test "reads a run's thinking, answer and tool calls in order" do
       timeline =
         View.fold(
