@@ -135,10 +135,11 @@ defmodule WardrikEvents.EncoderTest do
     test "list what they wait on", %{turn: turn} do
       parked = [
         {%ToolCall{id: "c1", name: "books__pay"},
-         %{interrupt: "tool_approval", message: "Pay $1,200?"}},
+         {:park, %{interrupt: "tool_approval", message: "Pay $1,200?"}}},
         {%ToolCall{id: "c2", name: "github__list"},
-         %WardrikCore.Authorization{url: "https://x.test/1", credential: "github"}},
-        {%ToolCall{id: "c3", name: "mail__send"}, :in_doubt}
+         {:park, %WardrikCore.Authorization{url: "https://x.test/1", credential: "github"}}},
+        {%ToolCall{id: "c3", name: "mail__send"}, {:park, :in_doubt}},
+        {%ToolCall{id: "c4", name: "echo"}, {:ok, "done"}}
       ]
 
       %{"data" => %{"interrupts" => interrupts}} =

@@ -177,8 +177,8 @@ defmodule WardrikEvents.Encoder do
         | metadata: Map.merge(metadata, %{status: :error, reason: metadata.reason})
       })
 
-  defp interrupts({:tool_calls, parked}),
-    do: Enum.map(parked, fn {call, reason} -> interrupt(reason, call) end)
+  defp interrupts({:tool_calls, results}),
+    do: for({call, {:park, reason}} <- results, do: interrupt(reason, call))
 
   defp interrupts(reason), do: [interrupt(reason, nil)]
 
