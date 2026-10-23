@@ -4,32 +4,18 @@ defmodule WardrikEventsTest do
 
   import ExUnit.CaptureLog
 
-  alias WardrikCore.Event
+  import WardrikEvents.Test.Events
+
   alias WardrikEvents.Cursor
 
-  setup context do
-    store = WardrikStore.ETS.new(name: :"store #{context.test}")
-    events = :"events #{context.test}"
-    start_supervised!({WardrikStore, store})
-    start_supervised!({WardrikEvents, name: events, store: store, deployment: "test"})
-    %{events: events, store: store}
-  end
+  setup :start_events
 
-  defp emit(events, agent_id, name, metadata) do
-    event = %Event{
-      name: [:wardrik_core | name],
-      time: DateTime.utc_now(),
-      metadata: Map.put(metadata, :agent_id, agent_id)
-    }
+  defp failing_once do
+    stub(WardrikStore, :put, fn store, key, value, opts ->
+      call_original(WardrikStore, :put, [store, key, value, opts])
+    end)
 
-    :ok = WardrikEvents.handle_event(event, events)
-  end
-
-  defp stopped(events, agent_id), do: emit(events, agent_id, [:agent, :stop], %{reason: :normal})
-
-  defp sequences(events, resources, opts \\ []) do
-    {:ok, %{events: read}} = WardrikEvents.page(events, resources, opts)
-    Enum.map(read, & &1["sequence"])
+    expect(WardrikStore, :put, fn _store, _key, _value, _opts -> {:error, :down} end)
   end
 
   test "keeps each agent's events in order, numbered from 1 with no gaps", %{events: events} do
@@ -50,7 +36,7 @@ defmodule WardrikEventsTest do
   end
 
   test "sends live events to the log's stream, and keeps them nowhere", %{events: events} do
-    :ok = WardrikEvents.join(events, "acme/triage")
+    :ok = WardrikEvents.subscribe(events, ["acme/triage"])
     span = WardrikCore.Span.root()
     emit(events, "acme/triage", [:message, :delta], %{kind: :content, span: span, text: "Hi"})
 
@@ -60,7 +46,7 @@ defmodule WardrikEventsTest do
   end
 
   test "sends kept events to the stream with their place in the log", %{events: events} do
-    :ok = WardrikEvents.join(events, "acme/triage")
+    :ok = WardrikEvents.subscribe(events, ["acme/triage"])
     stopped(events, "acme/triage")
 
     assert_receive {WardrikEvents, "acme/triage",
@@ -72,7 +58,10 @@ defmodule WardrikEventsTest do
     taken = WardrikStore.scope(store, "wardrik_events")
 
     {:ok, _vsn} =
-      WardrikStore.put(taken, "acme%2Ftriage/000000000002", %{"sequence" => "000000000002"},
+      WardrikStore.put(
+        taken,
+        "events/acme%2Ftriage/000000000002",
+        %{"sequence" => "000000000002"},
         if_vsn: nil
       )
 
@@ -81,12 +70,8 @@ defmodule WardrikEventsTest do
     assert sequences(events, ["acme/triage"]) == ["000000000001", "000000000002", "000000000003"]
   end
 
-  test "leaves no gap when a write fails", %{events: events} do
-    stub(WardrikStore, :put, fn store, key, value, opts ->
-      call_original(WardrikStore, :put, [store, key, value, opts])
-    end)
-
-    expect(WardrikStore, :put, fn _store, _key, _value, _opts -> {:error, :down} end)
+  test "keeps nothing for a log it couldn't list", %{events: events} do
+    failing_once()
 
     assert capture_log(fn -> stopped(events, "acme/triage") end) =~
              "Couldn't keep wardrik.agent.stopped"
@@ -94,6 +79,18 @@ defmodule WardrikEventsTest do
     stopped(events, "acme/triage")
 
     assert sequences(events, ["acme/triage"]) == ["000000000001"]
+  end
+
+  test "leaves no gap when an event's write fails", %{events: events} do
+    stopped(events, "acme/triage")
+    failing_once()
+
+    assert capture_log(fn -> stopped(events, "acme/triage") end) =~
+             "Couldn't keep wardrik.agent.stopped"
+
+    stopped(events, "acme/triage")
+
+    assert sequences(events, ["acme/triage"]) == ["000000000001", "000000000002"]
   end
 
   describe "reading" do

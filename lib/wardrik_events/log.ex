@@ -1,54 +1,76 @@
 defmodule WardrikEvents.Log do
-  @moduledoc "A log is one agent's kept events, in order, each under its sequence number in a store."
+  @moduledoc """
+  A log is one agent's kept events, in order, each under its sequence number in a store, and listed
+  in an index of every log.
+  """
 
   alias WardrikEvents.CloudEvent
 
   @digits 12
+  @index "logs/"
 
   @doc "Writes `event` at the log's next sequence number, and returns it with that number."
   @spec append(WardrikStore.t(), :ets.table(), String.t(), CloudEvent.t()) ::
           {:ok, CloudEvent.t()} | {:error, term()}
   def append(store, heads, log, event), do: append(store, heads, log, event, 1)
 
-  @doc "Returns the sequence number of the log's last event, or 0 when it has none."
+  @doc "Returns the sequence number of the log's last event, or of the last it dropped."
   @spec last(WardrikStore.t(), String.t()) :: non_neg_integer()
-  def last(store, log) do
-    store
-    |> WardrikStore.keys(prefix(log))
-    |> List.last()
-    |> sequence()
+  def last(store, log), do: gallop(store, log, oldest(store, log) - 1, 1)
+
+  @doc "Returns the oldest sequence number the log holds, or will hold next."
+  @spec oldest(WardrikStore.t(), String.t()) :: pos_integer()
+  def oldest(store, log) do
+    case WardrikStore.get(store, index_key(log)) do
+      %{"dropped" => dropped} -> dropped + 1
+      nil -> 1
+    end
   end
 
-  @doc "Reads up to `limit` events after the sequence number `after`."
-  @spec read(WardrikStore.t(), String.t(), non_neg_integer(), pos_integer()) :: [CloudEvent.t()]
+  @doc """
+  Reads up to `limit` events after the sequence number `after`, or returns `{:dropped, oldest}`
+  when the log no longer holds the next one.
+  """
+  @spec read(WardrikStore.t(), String.t(), non_neg_integer(), non_neg_integer()) ::
+          {:ok, [CloudEvent.t()]} | {:dropped, pos_integer()}
   def read(store, log, after_sequence, limit) do
-    store
-    |> WardrikStore.keys(prefix(log))
-    |> Enum.drop_while(fn key -> sequence(key) <= after_sequence end)
-    |> Enum.take(limit)
-    |> Enum.map(&WardrikStore.get(store, &1))
+    oldest = oldest(store, log)
+
+    if after_sequence + 1 < oldest,
+      do: {:dropped, oldest},
+      else: {:ok, taken(store, log, after_sequence + 1, limit)}
   end
 
-  @doc "Lists every log the store holds."
-  @spec logs(WardrikStore.t()) :: [String.t()]
-  def logs(store) do
-    store
-    |> WardrikStore.keys()
-    |> Enum.map(fn key -> key |> String.split("/", parts: 2) |> hd() |> URI.decode_www_form() end)
-    |> Enum.uniq()
+  @doc "Lists the logs whose names start with `prefix`."
+  @spec logs(WardrikStore.t(), String.t()) :: [String.t()]
+  def logs(store, prefix \\ "") do
+    for key <- WardrikStore.keys(store, index_key(prefix)),
+        do: key |> String.replace_prefix(@index, "") |> URI.decode_www_form()
+  end
+
+  @doc "Drops the log's events written before `cutoff`, oldest first."
+  @spec trim(WardrikStore.t(), String.t(), DateTime.t()) :: :ok | {:error, term()}
+  def trim(store, log, cutoff) do
+    {dropped, vsn} = lookup_dropped(store, log)
+
+    case expired_through(store, log, dropped, cutoff) do
+      ^dropped -> :ok
+      last -> drop(store, log, dropped + 1, last, vsn)
+    end
   end
 
   defp append(store, heads, log, event, retries) do
-    sequence = next(store, heads, log)
-    sequenced = CloudEvent.sequenced(event, sequence)
+    with {:ok, sequence} <- next(store, heads, log) do
+      sequenced = CloudEvent.sequenced(event, sequence)
 
-    case WardrikStore.put(store, key(log, sequence), sequenced, if_vsn: nil) do
-      {:ok, _vsn} ->
-        {:ok, sequenced}
+      case WardrikStore.put(store, key(log, sequence), sequenced, if_vsn: nil) do
+        {:ok, _vsn} ->
+          {:ok, sequenced}
 
-      {:error, reason} ->
-        :ets.delete(heads, log)
-        retried(reason, store, heads, log, event, retries)
+        {:error, reason} ->
+          :ets.delete(heads, log)
+          retried(reason, store, heads, log, event, retries)
+      end
     end
   end
 
@@ -58,15 +80,83 @@ defmodule WardrikEvents.Log do
   defp retried(reason, _store, _heads, _log, _event, _retries), do: {:error, reason}
 
   defp next(store, heads, log) do
-    if not :ets.member(heads, log), do: :ets.insert_new(heads, {log, last(store, log)})
-    :ets.update_counter(heads, log, 1)
+    with :ok <- loaded(store, heads, log), do: {:ok, :ets.update_counter(heads, log, 1)}
+  end
+
+  defp loaded(store, heads, log) do
+    if :ets.member(heads, log), do: :ok, else: load(store, heads, log)
+  end
+
+  defp load(store, heads, log) do
+    with :ok <- indexed(store, log) do
+      :ets.insert_new(heads, {log, last(store, log)})
+      :ok
+    end
+  end
+
+  defp indexed(store, log) do
+    case WardrikStore.put(store, index_key(log), %{"dropped" => 0}, if_vsn: nil) do
+      {:ok, _vsn} -> :ok
+      {:error, :conflict} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp taken(store, log, first, limit) do
+    first
+    |> Stream.iterate(&(&1 + 1))
+    |> Stream.take(limit)
+    |> Stream.map(&WardrikStore.get(store, key(log, &1)))
+    |> Enum.take_while(&(&1 != nil))
+  end
+
+  defp gallop(store, log, known, step) do
+    if written?(store, log, known + step),
+      do: gallop(store, log, known + step, step * 2),
+      else: bisect(store, log, known, known + step)
+  end
+
+  defp bisect(_store, _log, known, missing) when missing - known <= 1, do: known
+
+  defp bisect(store, log, known, missing) do
+    middle = div(known + missing, 2)
+
+    if written?(store, log, middle),
+      do: bisect(store, log, middle, missing),
+      else: bisect(store, log, known, middle)
+  end
+
+  defp written?(store, log, sequence), do: WardrikStore.get(store, key(log, sequence)) != nil
+
+  defp lookup_dropped(store, log) do
+    case WardrikStore.lookup(store, index_key(log)) do
+      {%{"dropped" => dropped}, vsn} -> {dropped, vsn}
+      nil -> {0, nil}
+    end
+  end
+
+  defp expired_through(store, log, sequence, cutoff) do
+    with %{"time" => time} <- WardrikStore.get(store, key(log, sequence + 1)),
+         {:ok, at, _offset} <- DateTime.from_iso8601(time),
+         :lt <- DateTime.compare(at, cutoff) do
+      expired_through(store, log, sequence + 1, cutoff)
+    else
+      _kept -> sequence
+    end
+  end
+
+  defp drop(store, log, first, last, vsn) do
+    with {:ok, _vsn} <- WardrikStore.put(store, index_key(log), %{"dropped" => last}, if_vsn: vsn) do
+      first..last//1
+      |> Enum.map(&WardrikStore.delete(store, key(log, &1)))
+      |> Enum.find(:ok, &match?({:error, _reason}, &1))
+    end
   end
 
   defp key(log, sequence),
     do: prefix(log) <> (sequence |> Integer.to_string() |> String.pad_leading(@digits, "0"))
 
-  defp prefix(log), do: URI.encode_www_form(log) <> "/"
+  defp index_key(log), do: @index <> URI.encode_www_form(log)
 
-  defp sequence(nil), do: 0
-  defp sequence(key), do: key |> String.split("/") |> List.last() |> String.to_integer()
+  defp prefix(log), do: "events/" <> URI.encode_www_form(log) <> "/"
 end
