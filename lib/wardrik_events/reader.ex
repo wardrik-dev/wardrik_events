@@ -6,6 +6,8 @@ defmodule WardrikEvents.Reader do
   alias WardrikEvents.Log
   alias WardrikEvents.Pattern
 
+  @chunk 500
+
   @typedoc "An event with its log, and its place there."
   @type entry() :: {String.t(), non_neg_integer(), CloudEvent.t()}
 
@@ -52,6 +54,14 @@ defmodule WardrikEvents.Reader do
     end
   end
 
+  @doc "Streams every entry of `log`, oldest first."
+  @spec all(map(), String.t()) :: Enumerable.t(entry())
+  def all(settings, log) do
+    0
+    |> Stream.unfold(&chunk(settings, log, &1))
+    |> Stream.concat()
+  end
+
   @doc "Moves `cursor` past each entry."
   @spec advanced(Cursor.t(), [entry()]) :: Cursor.t()
   def advanced(cursor, entries) do
@@ -60,12 +70,29 @@ defmodule WardrikEvents.Reader do
     end)
   end
 
+  defp chunk(settings, log, at) do
+    case entries(settings, log, at, @chunk) do
+      [] -> nil
+      entries -> {entries, last_sequence(entries)}
+    end
+  end
+
+  defp last_sequence(entries) do
+    {_log, sequence, _event} = List.last(entries)
+    sequence
+  end
+
   defp numbered(log, events),
     do: for(event <- events, do: {log, String.to_integer(event["sequence"]), event})
 
   defp dropped(settings, log, at, oldest, events) do
-    CloudEvent.new("events.dropped", "agents/" <> log, %{"after" => at, "oldest" => oldest},
+    CloudEvent.new(
+      "events.dropped",
+      Map.get(settings, :subject, "agents/" <> log),
+      %{"after" => at, "oldest" => oldest},
       agent_id: log,
+      source:
+        Map.get_lazy(settings, :source, fn -> CloudEvent.source(settings.deployment, log) end),
       deployment: settings.deployment,
       time: resumed_at(events)
     )

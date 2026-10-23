@@ -39,3 +39,20 @@ defmodule WardrikEvents.Test.Events do
     Enum.map(read, &(&1["sequence"] || &1["type"]))
   end
 end
+
+defmodule WardrikEvents.Test.Protocol do
+  @moduledoc "Validates CloudEvents against the protocol's schemas."
+
+  import ExUnit.Assertions
+
+  def valid!(cloud_event) do
+    envelope = JSV.build!(WardrikProtocol.schema("cloudevent"))
+    assert {:ok, _event} = JSV.validate(cloud_event, envelope)
+    "wardrik." <> type = cloud_event["type"]
+
+    assert {:ok, _data} =
+             JSV.validate(cloud_event["data"], JSV.build!(WardrikProtocol.schema(type)))
+
+    cloud_event
+  end
+end

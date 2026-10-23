@@ -68,7 +68,7 @@ defmodule WardrikEvents.Log do
           {:ok, sequenced}
 
         {:error, reason} ->
-          :ets.delete(heads, log)
+          :ets.delete(heads, head_key(store, log))
           retried(reason, store, heads, log, event, retries)
       end
     end
@@ -80,19 +80,22 @@ defmodule WardrikEvents.Log do
   defp retried(reason, _store, _heads, _log, _event, _retries), do: {:error, reason}
 
   defp next(store, heads, log) do
-    with :ok <- loaded(store, heads, log), do: {:ok, :ets.update_counter(heads, log, 1)}
+    with :ok <- loaded(store, heads, log),
+         do: {:ok, :ets.update_counter(heads, head_key(store, log), 1)}
   end
 
   defp loaded(store, heads, log) do
-    if :ets.member(heads, log), do: :ok, else: load(store, heads, log)
+    if :ets.member(heads, head_key(store, log)), do: :ok, else: load(store, heads, log)
   end
 
   defp load(store, heads, log) do
     with :ok <- indexed(store, log) do
-      :ets.insert_new(heads, {log, last(store, log)})
+      :ets.insert_new(heads, {head_key(store, log), last(store, log)})
       :ok
     end
   end
+
+  defp head_key(store, log), do: {store.scope, log}
 
   defp indexed(store, log) do
     case WardrikStore.put(store, index_key(log), %{"dropped" => 0}, if_vsn: nil) do

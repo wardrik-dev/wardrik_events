@@ -1,6 +1,8 @@
 defmodule WardrikEvents.EncoderTest do
   use ExUnit.Case, async: true
 
+  import WardrikEvents.Test.Protocol
+
   alias WardrikCore.Event
   alias WardrikCore.Principal
   alias WardrikCore.Span
@@ -8,7 +10,6 @@ defmodule WardrikEvents.EncoderTest do
   alias WardrikEvents.Encoder
 
   @agent "acme/triage"
-  @envelope JSV.build!(WardrikProtocol.schema("cloudevent"))
 
   setup do
     turn = Span.root()
@@ -28,15 +29,7 @@ defmodule WardrikEvents.EncoderTest do
     do: event([:wardrik_core | name], metadata, measurements)
 
   defp encode(event) do
-    for cloud_event <- Encoder.encode(event, "local") do
-      assert {:ok, _event} = JSV.validate(cloud_event, @envelope)
-      "wardrik." <> type = cloud_event["type"]
-
-      assert {:ok, _data} =
-               JSV.validate(cloud_event["data"], JSV.build!(WardrikProtocol.schema(type)))
-
-      cloud_event
-    end
+    for cloud_event <- Encoder.encode(event, "local"), do: valid!(cloud_event)
   end
 
   defp one(event) do
@@ -113,8 +106,11 @@ defmodule WardrikEvents.EncoderTest do
 
   describe "runs" do
     test "start, resume, and carry on after a restart with nothing to say", %{turn: turn} do
-      assert %{"type" => "wardrik.run.started", "subject" => "runs/" <> trace} =
-               one(core([:turn, :start], %{kind: :run, span: turn}))
+      assert %{
+               "type" => "wardrik.run.started",
+               "subject" => "runs/" <> trace,
+               "data" => %{"run" => %{"message_ids" => ["msg_1"]}}
+             } = one(core([:turn, :start], %{kind: :run, span: turn, message_ids: ["msg_1"]}))
 
       assert trace == turn.trace
 

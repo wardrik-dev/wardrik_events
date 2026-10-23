@@ -24,7 +24,9 @@ defmodule WardrikEvents.Retention do
 
   @impl GenServer
   def handle_continue(:trim, settings) do
-    trim(settings.store, DateTime.add(DateTime.utc_now(), -settings.retention, :day))
+    cutoff = DateTime.add(DateTime.utc_now(), -settings.retention, :day)
+    trim(settings.store, cutoff)
+    trim(settings.audit, cutoff)
     Process.send_after(self(), :trim, @every)
     {:noreply, settings}
   end

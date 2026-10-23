@@ -67,7 +67,7 @@ defmodule WardrikEvents.Encoder do
   end
 
   defp core([:turn, :start], %{metadata: %{kind: :run} = metadata}),
-    do: [run("run.started", metadata, %{})]
+    do: [run("run.started", metadata, %{}, Value.put(%{}, "message_ids", metadata[:message_ids]))]
 
   defp core([:turn, :start], %{metadata: %{kind: :resume} = metadata}),
     do: [run("run.resumed", metadata, %{})]
@@ -106,8 +106,8 @@ defmodule WardrikEvents.Encoder do
   defp stopped(:error, %{metadata: metadata}),
     do: run("run.failed", metadata, %{"error" => Value.error(metadata.reason)})
 
-  defp run(type, %{span: %Span{trace: trace}}, data),
-    do: {type, "runs/" <> trace, Map.put(data, "run", %{"id" => trace})}
+  defp run(type, %{span: %Span{trace: trace}}, data, run \\ %{}),
+    do: {type, "runs/" <> trace, Map.put(data, "run", Map.put(run, "id", trace))}
 
   defp delta(%{kind: kind, span: span, text: text}),
     do: about_message(delta_type(kind), span, %{"delta" => text})
