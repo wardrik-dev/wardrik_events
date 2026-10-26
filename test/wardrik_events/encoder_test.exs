@@ -135,7 +135,7 @@ defmodule WardrikEvents.EncoderTest do
     test "list what they wait on", %{turn: turn} do
       parked = [
         {%ToolCall{id: "c1", name: "books__pay"},
-         {:park, %{interrupt: "tool_approval", message: "Pay $1,200?"}}},
+         {:park, %{interrupt: "tool_approval", message: "Pay $1,200?", labels: ["outside"]}}},
         {%ToolCall{id: "c2", name: "github__list"},
          {:park, %WardrikCore.Authorization{url: "https://x.test/1", credential: "github"}}},
         {%ToolCall{id: "c3", name: "mail__send"}, {:park, :in_doubt}},
@@ -157,7 +157,8 @@ defmodule WardrikEvents.EncoderTest do
                  "id" => "c1",
                  "reason" => "tool_approval",
                  "message" => "Pay $1,200?",
-                 "name" => "books__pay"
+                 "name" => "books__pay",
+                 "labels" => ["outside"]
                },
                %{
                  "id" => "c2",
@@ -177,6 +178,7 @@ defmodule WardrikEvents.EncoderTest do
                one(core([:turn, :stop], %{kind: :run, span: turn, outcome: :park, reason: model}))
 
       refute Map.has_key?(asked, "tool_call_id")
+      refute Map.has_key?(asked, "labels")
     end
 
     test "are cancelled, reach their deadline, or fail", %{turn: turn} do

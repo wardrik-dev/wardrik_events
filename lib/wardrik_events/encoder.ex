@@ -195,7 +195,11 @@ defmodule WardrikEvents.Encoder do
     %{"id" => (call && call.id) || "model", "reason" => kind, "message" => message}
     |> Value.put("tool_call_id", call && call.id)
     |> Value.put("name", call && call.name)
+    |> Value.put("labels", labels(reason))
   end
+
+  defp labels(%{labels: [_ | _] = labels}), do: labels
+  defp labels(_reason), do: nil
 
   defp interruption(%{interrupt: kind, message: message}), do: {kind, message}
 
