@@ -243,6 +243,9 @@ defmodule WardrikEvents.Encoder do
 
   defp priced(data, _unanswered, _measurements), do: data
 
+  defp result(tool_call, {:ok, %ReqLLM.ToolResult{output: output}}),
+    do: Value.capped(tool_call, "result", output)
+
   defp result(tool_call, {:ok, answer}), do: Value.capped(tool_call, "result", answer)
   defp result(tool_call, _no_answer), do: tool_call
 

@@ -351,6 +351,18 @@ defmodule WardrikEvents.EncoderTest do
                  )
                )
 
+      labelled = %ReqLLM.ToolResult{output: "a note", metadata: %{labels: ["outside"]}}
+
+      assert %{"data" => %{"tool" => %{"call" => %{"result" => "a note"}}}} =
+               one(
+                 core([:step, :stop], %{
+                   step: {:tool_call, call},
+                   span: step,
+                   status: :ok,
+                   response: {:ok, labelled}
+                 })
+               )
+
       assert %{"data" => %{"status" => "error", "error" => %{"message" => "Not found"}}} =
                one(
                  core(
