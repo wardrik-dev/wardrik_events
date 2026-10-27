@@ -8,6 +8,7 @@ defmodule WardrikEvents.Log do
 
   @digits 12
   @index "logs/"
+  @batch 100
 
   @doc "Writes `event` at the log's next sequence number, and returns it with that number."
   @spec append(WardrikStore.t(), :ets.table(), String.t(), CloudEvent.t()) ::
@@ -106,11 +107,13 @@ defmodule WardrikEvents.Log do
   end
 
   defp taken(store, log, first, limit) do
-    first
-    |> Stream.iterate(&(&1 + 1))
-    |> Stream.take(limit)
-    |> Stream.map(&WardrikStore.get(store, key(log, &1)))
+    keys = for sequence <- first..(first + limit - 1)//1, do: key(log, sequence)
+    found = WardrikStore.lookup_many(store, keys)
+
+    keys
+    |> Enum.map(&Map.get(found, &1))
     |> Enum.take_while(&(&1 != nil))
+    |> Enum.map(fn {event, _vsn} -> event end)
   end
 
   defp gallop(store, log, known, step) do
@@ -139,14 +142,22 @@ defmodule WardrikEvents.Log do
   end
 
   defp expired_through(store, log, sequence, cutoff) do
-    with %{"time" => time} <- WardrikStore.get(store, key(log, sequence + 1)),
-         {:ok, at, _offset} <- DateTime.from_iso8601(time),
-         :lt <- DateTime.compare(at, cutoff) do
-      expired_through(store, log, sequence + 1, cutoff)
-    else
-      _kept -> sequence
+    expired = store |> taken(log, sequence + 1, @batch) |> Enum.take_while(&expired?(&1, cutoff))
+    through = sequence + length(expired)
+
+    if length(expired) == @batch,
+      do: expired_through(store, log, through, cutoff),
+      else: through
+  end
+
+  defp expired?(%{"time" => time}, cutoff) do
+    case DateTime.from_iso8601(time) do
+      {:ok, at, _offset} -> DateTime.compare(at, cutoff) == :lt
+      _unreadable -> false
     end
   end
+
+  defp expired?(_event, _cutoff), do: false
 
   defp drop(store, log, first, last, vsn) do
     with {:ok, _vsn} <- WardrikStore.put(store, index_key(log), %{"dropped" => last}, if_vsn: vsn) do
