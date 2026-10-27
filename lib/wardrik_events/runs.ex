@@ -1,7 +1,8 @@
 defmodule WardrikEvents.Runs do
   @moduledoc """
   What an agent has done: each run, with who started it, how long it took, the model, its tool
-  calls, the tokens it read and wrote and what it cost, and the totals across them.
+  calls, the tokens it read and wrote and what it cost, its subagents' among them, and the totals
+  across them.
 
       {runs, _cursor} = WardrikEvents.view(MyApp.Events, "acme/triage", WardrikEvents.Runs)
       WardrikEvents.Runs.totals(runs)
@@ -121,6 +122,17 @@ defmodule WardrikEvents.Runs do
     %{
       run
       | input_tokens: run.input_tokens + (get_in(data, ["usage", "input_tokens"]) || 0),
+        output_tokens: run.output_tokens + (get_in(data, ["usage", "output_tokens"]) || 0),
+        cost_micro_usd: run.cost_micro_usd + (get_in(data, ["cost", "micro_usd"]) || 0)
+    }
+  end
+
+  defp step(run, type, data, _event)
+       when type in ["wardrik.subagent.completed", "wardrik.subagent.failed"] do
+    %{
+      run
+      | tool_calls: run.tool_calls + (data["tool_calls"] || 0),
+        input_tokens: run.input_tokens + (get_in(data, ["usage", "input_tokens"]) || 0),
         output_tokens: run.output_tokens + (get_in(data, ["usage", "output_tokens"]) || 0),
         cost_micro_usd: run.cost_micro_usd + (get_in(data, ["cost", "micro_usd"]) || 0)
     }

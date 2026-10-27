@@ -268,6 +268,28 @@ defmodule WardrikEvents.ViewsTest do
              }
     end
 
+    test "counts what a run's subagents did and spent as the run's" do
+      runs =
+        View.fold(
+          [
+            event("run.started", run()),
+            event("message.completed", %{"cost" => %{"micro_usd" => 3}}),
+            event("subagent.progress", %{"tool_calls" => 1}),
+            event("subagent.completed", %{
+              "tool_calls" => 2,
+              "usage" => %{"input_tokens" => 40, "output_tokens" => 8},
+              "cost" => %{"micro_usd" => 20}
+            }),
+            event("subagent.failed", %{"tool_calls" => 1, "cost" => nil}),
+            event("run.completed", %{})
+          ],
+          Runs
+        )
+
+      assert [%{tool_calls: 3, input_tokens: 40, output_tokens: 8, cost_micro_usd: 23}] =
+               Runs.runs(runs)
+    end
+
     test "has nothing to say before a run, or of a run going on" do
       runs = View.fold([event("message.delta", %{}), event("run.started", run())], Runs)
 

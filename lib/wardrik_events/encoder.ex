@@ -97,23 +97,43 @@ defmodule WardrikEvents.Encoder do
   defp core([:subagent, :started], %{metadata: metadata}),
     do: [subagent("subagent.started", metadata, %{"prompt" => metadata.prompt})]
 
+  defp core([:subagent, :progress], %{metadata: metadata}),
+    do: [
+      subagent("subagent.progress", metadata, %{
+        "tool" => tool(metadata.call),
+        "tool_calls" => metadata.tool_calls
+      })
+    ]
+
   defp core([:subagent, :completed], %{metadata: metadata}),
     do: [
-      subagent("subagent.completed", metadata, %{
-        "message" => Value.message(metadata.message),
-        "duration_ms" => metadata.duration_ms
-      })
+      subagent(
+        "subagent.completed",
+        metadata,
+        summary(metadata, %{"message" => Value.message(metadata.message)})
+      )
     ]
 
   defp core([:subagent, :failed], %{metadata: metadata}),
     do: [
-      subagent("subagent.failed", metadata, %{
-        "error" => Value.error(metadata.error),
-        "duration_ms" => metadata.duration_ms
-      })
+      subagent(
+        "subagent.failed",
+        metadata,
+        summary(metadata, %{"error" => Value.error(metadata.error)})
+      )
     ]
 
   defp core(_internal, _event), do: []
+
+  defp summary(%{measurements: measurements} = metadata, data) do
+    data
+    |> Map.merge(%{
+      "duration_ms" => metadata.duration_ms,
+      "tool_calls" => metadata.tool_calls,
+      "cost" => Value.cost(measurements, "catalog")
+    })
+    |> Value.put("usage", Value.usage(measurements))
+  end
 
   defp subagent(type, metadata, data),
     do:

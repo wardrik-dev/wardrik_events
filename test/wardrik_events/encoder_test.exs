@@ -311,22 +311,53 @@ defmodule WardrikEvents.EncoderTest do
                "data" => %{"agent" => %{"name" => "researcher"}, "prompt" => "Look"}
              } = one(core([:subagent, :started], %{span: step, agent: agent, prompt: "Look"}))
 
+      call = %ToolCall{id: "call_1", name: "search", arguments: %{"q" => "news"}}
+      progress = %{span: step, agent: agent, call: call, tool_calls: 1}
+
+      assert %{
+               "type" => "wardrik.subagent.progress",
+               "data" => %{"tool" => %{"name" => "search"}, "tool_calls" => 1}
+             } = one(core([:subagent, :progress], progress))
+
       completed = %{
         span: step,
         agent: agent,
         message: ReqLLM.Context.assistant("Found it."),
-        duration_ms: 12
+        duration_ms: 12,
+        tool_calls: 3,
+        measurements: %{input_tokens: 30, output_tokens: 6, usd: 0.02}
       }
 
       assert %{
                "type" => "wardrik.subagent.completed",
-               "data" => %{"message" => %{"parts" => [%{"content" => "Found it."}]}}
+               "data" => %{
+                 "message" => %{"parts" => [%{"content" => "Found it."}]},
+                 "tool_calls" => 3,
+                 "usage" => %{"input_tokens" => 30, "output_tokens" => 6},
+                 "cost" => %{"micro_usd" => 20_000}
+               }
              } = one(core([:subagent, :completed], completed))
 
-      failed = %{span: step, agent: agent, error: "It came to a call.", duration_ms: 3}
+      failed = %{
+        span: step,
+        agent: agent,
+        error: "It came to a call.",
+        duration_ms: 3,
+        tool_calls: 0,
+        measurements: %{}
+      }
 
-      assert %{"data" => %{"error" => %{"message" => "It came to a call."}, "duration_ms" => 3}} =
-               one(core([:subagent, :failed], failed))
+      assert %{
+               "data" =>
+                 %{
+                   "error" => %{"message" => "It came to a call."},
+                   "duration_ms" => 3,
+                   "tool_calls" => 0,
+                   "cost" => nil
+                 } = data
+             } = one(core([:subagent, :failed], failed))
+
+      refute Map.has_key?(data, "usage")
     end
   end
 
