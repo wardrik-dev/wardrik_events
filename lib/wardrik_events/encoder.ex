@@ -94,7 +94,31 @@ defmodule WardrikEvents.Encoder do
        error_status(%{"tool" => tool(call), "replayed" => false}, exited(reason))}
     ]
 
+  defp core([:subagent, :started], %{metadata: metadata}),
+    do: [subagent("subagent.started", metadata, %{"prompt" => metadata.prompt})]
+
+  defp core([:subagent, :completed], %{metadata: metadata}),
+    do: [
+      subagent("subagent.completed", metadata, %{
+        "message" => Value.message(metadata.message),
+        "duration_ms" => metadata.duration_ms
+      })
+    ]
+
+  defp core([:subagent, :failed], %{metadata: metadata}),
+    do: [
+      subagent("subagent.failed", metadata, %{
+        "error" => Value.error(metadata.error),
+        "duration_ms" => metadata.duration_ms
+      })
+    ]
+
   defp core(_internal, _event), do: []
+
+  defp subagent(type, metadata, data),
+    do:
+      {type, "agents/" <> metadata.agent_id,
+       Map.put(data, "agent", %{"name" => metadata.agent.name})}
 
   defp stopped(:ok, %{metadata: metadata}),
     do:

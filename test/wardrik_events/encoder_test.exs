@@ -302,6 +302,34 @@ defmodule WardrikEvents.EncoderTest do
     end
   end
 
+  describe "subagents" do
+    test "start, and complete with their answer or fail with why", %{step: step} do
+      agent = %{name: "researcher"}
+
+      assert %{
+               "type" => "wardrik.subagent.started",
+               "data" => %{"agent" => %{"name" => "researcher"}, "prompt" => "Look"}
+             } = one(core([:subagent, :started], %{span: step, agent: agent, prompt: "Look"}))
+
+      completed = %{
+        span: step,
+        agent: agent,
+        message: ReqLLM.Context.assistant("Found it."),
+        duration_ms: 12
+      }
+
+      assert %{
+               "type" => "wardrik.subagent.completed",
+               "data" => %{"message" => %{"parts" => [%{"content" => "Found it."}]}}
+             } = one(core([:subagent, :completed], completed))
+
+      failed = %{span: step, agent: agent, error: "It came to a call.", duration_ms: 3}
+
+      assert %{"data" => %{"error" => %{"message" => "It came to a call."}, "duration_ms" => 3}} =
+               one(core([:subagent, :failed], failed))
+    end
+  end
+
   describe "tool calls and steps" do
     test "end in an error when a call is stopped, or dies" do
       call = %ToolCall{id: "c7", name: "block"}
