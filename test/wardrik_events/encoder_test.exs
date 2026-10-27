@@ -388,6 +388,32 @@ defmodule WardrikEvents.EncoderTest do
                )
     end
 
+    test "say a model call or a tool call is tried again", %{step: step} do
+      retry = %{span: step, attempt: 1, attempts: 6, wait_ms: 800, reason: :timeout}
+
+      assert %{
+               "type" => "wardrik.message.retrying",
+               "data" => %{
+                 "message" => %{"id" => "msg_" <> _id},
+                 "attempt" => 1,
+                 "wait_ms" => 800,
+                 "error" => %{"type" => "timeout"}
+               }
+             } = one(core([:message, :retrying], retry))
+
+      call = %ToolCall{id: "c2", name: "github__list", arguments: %{}}
+      crashed = %{retry | reason: %RuntimeError{message: "blip"}}
+
+      assert %{
+               "type" => "wardrik.tool_call.retrying",
+               "subject" => "tool_calls/c2",
+               "data" => %{
+                 "tool" => %{"name" => "github__list", "call" => %{"id" => "c2"}},
+                 "error" => %{"type" => "RuntimeError", "message" => "blip"}
+               }
+             } = one(core([:tool_call, :retrying], Map.put(crashed, :call, call)))
+    end
+
     test "cut arguments past 64 KiB short, and say so", %{step: step} do
       call = %ToolCall{
         id: "c1",

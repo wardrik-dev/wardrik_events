@@ -58,6 +58,22 @@ defmodule WardrikEvents.ViewsTest do
       assert doing(activity) == ["wardrik.tool_call.completed c"]
     end
 
+    test "keeps a tool call that runs again as one call" do
+      activity =
+        View.fold(
+          [
+            event("run.started", run()),
+            event("tool_call.started", tool("a")),
+            event("tool_call.started", tool("b")),
+            event("tool_call.retrying", tool("a")),
+            event("tool_call.started", tool("a"))
+          ],
+          Activity
+        )
+
+      assert doing(activity) == ["wardrik.tool_call.started b", "wardrik.tool_call.started a"]
+    end
+
     test "counts the messages waiting, and goes idle when a run ends" do
       activity =
         View.fold(

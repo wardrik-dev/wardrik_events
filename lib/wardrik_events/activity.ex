@@ -14,6 +14,7 @@ defmodule WardrikEvents.Activity do
   @ended ~w(wardrik.run.completed wardrik.run.failed wardrik.run.cancelled
             wardrik.run.deadline_exceeded)
   @settled ~w(wardrik.tool_call.completed wardrik.tool_call.denied)
+  @running ~w(wardrik.tool_call.started wardrik.tool_call.retrying)
   @described ~w(message step interrupts attempt attempts wait_ms)
 
   @impl WardrikEvents.View
@@ -45,11 +46,11 @@ defmodule WardrikEvents.Activity do
 
   defp doing(_doing, type, _data, _time) when type in @ended, do: []
 
-  defp doing(doing, "wardrik.tool_call.started" = type, data, time) do
+  defp doing(doing, type, data, time) when type in @running do
     call = type |> described(data) |> Map.put("since", time)
 
     if calls?(doing),
-      do: doing ++ [call],
+      do: Enum.reject(doing, &same_call?(&1, data)) ++ [call],
       else: [call]
   end
 
@@ -66,7 +67,7 @@ defmodule WardrikEvents.Activity do
   defp doing(doing, _type, _data, _time), do: doing
 
   defp calls?([_call | _calls] = doing),
-    do: Enum.all?(doing, &(&1["type"] == "wardrik.tool_call.started"))
+    do: Enum.all?(doing, &(&1["type"] in @running))
 
   defp calls?([]), do: false
 

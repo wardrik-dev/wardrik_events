@@ -74,6 +74,16 @@ defmodule WardrikEvents.Encoder do
 
   defp core([:turn, :stop], event), do: [stopped(event.metadata.outcome, event)]
   defp core([:message, :delta], %{metadata: metadata}), do: [delta(metadata)]
+
+  defp core([:message, :retrying], %{metadata: metadata}),
+    do: [about_message("message.retrying", metadata.span, retried(metadata))]
+
+  defp core([:tool_call, :retrying], %{metadata: %{call: call} = metadata}),
+    do: [
+      {"tool_call.retrying", "tool_calls/" <> call.id,
+       Map.put(retried(metadata), "tool", tool(call))}
+    ]
+
   defp core([:step, :start], %{metadata: metadata}), do: step_started(metadata.step, metadata)
   defp core([:step, :stop], event), do: step_stopped(event.metadata.step, event)
   defp core([:step, :exception], event), do: step_failed(event.metadata.step, event)
@@ -115,6 +125,15 @@ defmodule WardrikEvents.Encoder do
 
   defp run(type, %{span: %Span{trace: trace}}, data, run \\ %{}),
     do: {type, "runs/" <> trace, Map.put(data, "run", Map.put(run, "id", trace))}
+
+  defp retried(metadata) do
+    %{
+      "attempt" => metadata.attempt,
+      "attempts" => metadata.attempts,
+      "wait_ms" => metadata.wait_ms,
+      "error" => Value.error(metadata.reason)
+    }
+  end
 
   defp delta(%{kind: kind, span: span, text: text}),
     do: about_message(delta_type(kind), span, %{"delta" => text})
