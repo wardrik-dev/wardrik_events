@@ -252,7 +252,7 @@ defmodule WardrikEvents.Encoder do
   defp interruption(:in_doubt),
     do:
       {"in_doubt",
-       "This call may have run before a restart. Approve it to run it again, or deny it."}
+       "This call may have run, but its answer was lost. Approve it to run it again, or deny it."}
 
   defp interruption(reason), do: {"tool_approval", inspect(reason)}
 
