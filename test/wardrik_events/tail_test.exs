@@ -141,5 +141,17 @@ defmodule WardrikEvents.TailTest do
     test "refuses a cursor it didn't write", %{events: events} do
       assert {:error, :invalid_cursor} = WardrikEvents.stream(events, ["acme/*"], after: "nope")
     end
+
+    test "closes after the events it follows have stopped", %{events: events} do
+      stopped(events, "acme/triage")
+      {:ok, stream} = WardrikEvents.stream(events, ["acme/*"], after: Cursor.encode(%{}))
+
+      taken =
+        stream
+        |> Stream.each(fn _taken -> stop_supervised!(WardrikEvents) end)
+        |> Enum.take(1)
+
+      assert [{%{"sequence" => "000000000001"}, _cursor}] = taken
+    end
   end
 end

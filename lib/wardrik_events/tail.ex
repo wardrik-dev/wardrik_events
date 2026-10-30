@@ -74,8 +74,17 @@ defmodule WardrikEvents.Tail do
   end
 
   defp close(tail) do
-    :ok = Subscribers.unsubscribe(tail.settings.group, tail.resources)
+    :ok = unsubscribe(tail)
     flush()
+  end
+
+  # Events that have stopped took their subscribers with them.
+  defp unsubscribe(tail) do
+    Subscribers.unsubscribe(tail.settings.group, tail.resources)
+  rescue
+    ArgumentError -> :ok
+  catch
+    :exit, _reason -> :ok
   end
 
   defp flush do
