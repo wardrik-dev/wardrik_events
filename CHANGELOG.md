@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.0-rc.1 (2026-10-30)
 
 - Each WardrikCore agent's events, encoded as the CloudEvents of WardrikProtocol, and kept in one
   log per agent in a WardrikStore.
