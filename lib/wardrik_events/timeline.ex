@@ -1,21 +1,29 @@
 defmodule WardrikEvents.Timeline do
   @moduledoc """
-  An agent's conversation as a person reads it: the messages people sent, and the run that answered
-  them, step by step.
+  A view of an agent's conversation: each message people sent, and each run that answered, step
+  by step.
 
       {timeline, cursor} = WardrikEvents.view(MyApp.Events, "acme/triage", WardrikEvents.Timeline)
       WardrikEvents.Timeline.items(timeline)
 
-  Items are maps with an `:id` and a `:kind`:
+  ## Items
 
-    * `:user`: a message someone sent, with `:text`, `:sender` and `:at`
-    * `:run`: the agent's answer, with `:status` (`:running`, `:completed`, `:failed`,
-      `:cancelled` or `:waiting`), `:steps` oldest first, `:model`, `:cost_micro_usd`,
-      `:started_at`, `:finished_at`, `:error` and `:interrupts`
+  Each item is a map with an `:id` and a `:kind`.
 
-  Steps are `:thinking` and `:text`, with `:text` and `:live` while it streams, and `:tool`, with
-  `:name`, `:arguments`, `:status` (`:running`, `:ok`, `:error` or `:denied`), `:result` and
-  `:error`. `touched/1` names the items the last event changed.
+    * `:user` - a message someone sent. Has `:text`, `:sender` and `:at`.
+    * `:run` - the agent's answer. Has `:status`, `:steps` (oldest first), `:model`,
+      `:cost_micro_usd`, `:started_at`, `:finished_at`, `:error` and `:interrupts`. `:status` is
+      `:running`, `:completed`, `:failed`, `:cancelled` or `:waiting`.
+
+  ## Steps
+
+  Each step is a map with a `:type`.
+
+    * `:thinking` and `:text` - have `:text`, and `:live` while it streams.
+    * `:tool` - has `:name`, `:arguments`, `:status`, `:result` and `:error`. `:status` is
+      `:running`, `:ok`, `:error` or `:denied`.
+
+  `touched/1` returns the ids of the items the last event changed.
   """
 
   @behaviour WardrikEvents.View

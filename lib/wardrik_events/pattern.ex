@@ -1,11 +1,16 @@
 defmodule WardrikEvents.Pattern do
-  @moduledoc "A pattern names logs: `*` stands for any run of characters, and `?` for one."
+  @moduledoc """
+  Matches log names against patterns. `*` matches any run of characters, and `?` matches one.
 
-  @doc "Returns whether `pattern` covers `log`."
+      WardrikEvents.Pattern.covers?("acme/*", "acme/triage")
+      #=> true
+  """
+
+  @doc "Returns `true` if `pattern` matches `log`."
   @spec covers?(String.t(), String.t()) :: boolean()
   def covers?(pattern, log), do: matches(pattern, log)
 
-  @doc "Returns the org a pattern or log names, or `*` when its first segment is a wildcard."
+  @doc "Returns the org, the first segment of a pattern or log. Returns `\"*\"` if that segment has a wildcard."
   @spec org(String.t()) :: String.t()
   def org(pattern) do
     [first | _rest] = String.split(pattern, "/", parts: 2)

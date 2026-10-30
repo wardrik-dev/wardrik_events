@@ -1,7 +1,7 @@
 defmodule WardrikEvents.Heads do
   @moduledoc """
-  Holds the events' settings, each log's last sequence number, and each agent's activity, in a table
-  its process owns.
+  Holds the events' settings, each log's last sequence number and each agent's activity in an ETS
+  table.
   """
 
   use GenServer
@@ -9,7 +9,7 @@ defmodule WardrikEvents.Heads do
   @doc false
   def start_link(settings), do: GenServer.start_link(__MODULE__, settings, name: settings.heads)
 
-  @doc "Returns the settings of the events whose table is `heads`."
+  @doc "Returns the settings kept in the table `heads`."
   @spec settings(atom()) :: map()
   def settings(heads) do
     [{:settings, settings}] = :ets.lookup(heads, :settings)
@@ -17,8 +17,10 @@ defmodule WardrikEvents.Heads do
   end
 
   @doc """
-  Replaces the value under `key` with `fun` applied to it, or to `initial` when there is none, and
-  returns the value before and after. Another process's update in between makes it apply `fun` again.
+  Updates the value under `key` with `fun`. Returns `{before, after}`.
+
+  `fun` gets `initial` if `key` has no value. If another process updates `key` first, `fun` runs
+  again on the new value.
   """
   @spec update(atom(), term(), term(), (term() -> term())) :: {term(), term()}
   def update(heads, key, initial, fun) do

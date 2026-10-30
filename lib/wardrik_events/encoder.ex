@@ -11,7 +11,7 @@ defmodule WardrikEvents.Encoder do
 
   @envelope [:agent_id, :span]
 
-  @doc "Encodes `event` as the CloudEvents it is, for the deployment named `deployment`."
+  @doc "Encodes `event` as CloudEvents for `deployment`. Returns `[]` for an event with no agent."
   @spec encode(Event.t(), String.t()) :: [CloudEvent.t()]
   def encode(%Event{metadata: %{agent_id: agent_id}} = event, deployment) do
     opts = [

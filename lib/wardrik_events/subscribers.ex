@@ -1,9 +1,9 @@
 defmodule WardrikEvents.Subscribers do
-  @moduledoc "Subscribers are the processes sent each event as it's written, to the logs their patterns cover."
+  @moduledoc "Sends each event, as it's written, to the processes subscribed to its log."
 
   alias WardrikEvents.Pattern
 
-  @doc "Subscribes the calling process to the logs `resources` cover."
+  @doc "Subscribes the calling process to the logs `resources` match."
   @spec subscribe(atom(), [String.t()]) :: :ok
   def subscribe(group, resources) do
     for {topic, patterns} <- by_topic(resources) do
@@ -13,7 +13,7 @@ defmodule WardrikEvents.Subscribers do
     :ok
   end
 
-  @doc "Unsubscribes the calling process from the logs `resources` cover."
+  @doc "Unsubscribes the calling process from `resources`."
   @spec unsubscribe(atom(), [String.t()]) :: :ok
   def unsubscribe(group, resources) do
     for {topic, patterns} <- by_topic(resources) do

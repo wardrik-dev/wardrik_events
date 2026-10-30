@@ -1,7 +1,9 @@
 defmodule WardrikEvents.Listener do
   @moduledoc """
-  A listener follows agents' events into your app. It hands each event to your module with the
-  cursor past it, so you keep your place with your own work and carry on after any restart.
+  Follows agents' events into your app.
+
+  A listener hands each event to `c:handle/2`, with the cursor past it. Save the cursor with your
+  work, and return it from `c:cursor/1`. The listener then carries on from there after a restart.
 
       defmodule MyApp.Runs do
         use WardrikEvents.Listener
@@ -22,14 +24,26 @@ defmodule WardrikEvents.Listener do
 
       children = [{MyApp.Runs, events: MyApp.Events, types: ["wardrik.run.completed"]}]
 
-  It takes `:events`, `:resources` (every agent unless set), `:types` (every type unless set) and
-  `:after`, the cursor `cursor/1` returns unless you define it, and your module's own options
-  beside them. Without a cursor it reads from what's written next.
+  ## Options
 
-  Each event is handed over at least once: save the cursor with what `handle/2` did, in one
-  transaction, and drop a repeat by the event's `id`. A `handle/2` that raises or returns anything
-  but `:ok` restarts the listener, which asks `cursor/1` again. A `wardrik.events.dropped` comes
-  whatever `:types` says.
+    * `:events` - required. The name of your `WardrikEvents`.
+    * `:resources` - patterns of the logs to follow. `["*"]`, every agent, unless set.
+    * `:types` - the event types to take. Every type unless set. A `wardrik.events.dropped`
+      always comes through.
+    * `:after` - the cursor to start after, if you don't define `c:cursor/1`. What's written next
+      unless set.
+
+  Your module's own options can sit beside these. They're in the listener's `:options`.
+
+  ## Delivery
+
+  Each event is handed over at least once.
+
+    1. Save the cursor in the same transaction as your work.
+    2. If `c:handle/2` raises or returns anything but `:ok`, the listener restarts.
+    3. On restart it calls `c:cursor/1` again, and reads after what it returns.
+
+  So drop a repeat by the event's `id`.
   """
 
   alias WardrikEvents.CloudEvent
@@ -38,13 +52,13 @@ defmodule WardrikEvents.Listener do
   @enforce_keys [:events, :cursor, :options]
   defstruct [:events, :cursor, :options]
 
-  @typedoc "The events it reads, the cursor past the event being handled, and its options."
+  @typedoc "The listener's events name, the cursor past the event being handled, and its options."
   @type t() :: %__MODULE__{events: atom(), cursor: String.t() | nil, options: keyword()}
 
-  @doc "Does what your app does with `event`, and returns `:ok` once it's done."
+  @doc "Handles `event`. Returns `:ok` once it's done."
   @callback handle(CloudEvent.t(), t()) :: :ok
 
-  @doc "Returns the cursor to read after as the listener starts, or `nil` for what's written next."
+  @doc "Returns the cursor to read after as the listener starts, or `nil` for what's written next. Returns `:after` unless defined."
   @callback cursor(t()) :: String.t() | nil
 
   defmacro __using__(_opts) do
@@ -64,7 +78,7 @@ defmodule WardrikEvents.Listener do
     end
   end
 
-  @doc "Returns the child that runs `module`'s listener, a permanent `Task`."
+  @doc "Returns the child spec that runs `module`'s listener as a permanent `Task`."
   @spec child_spec(module(), keyword()) :: Supervisor.child_spec()
   def child_spec(module, opts),
     do: %{id: module, start: {__MODULE__, :start_link, [module, opts]}, restart: :permanent}

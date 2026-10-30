@@ -1,7 +1,9 @@
 defmodule WardrikEvents.Log do
   @moduledoc """
-  A log is one agent's kept events, in order, each under its sequence number in a store, and listed
-  in an index of every log.
+  Reads and writes one log: an agent's kept events in a store, in order, each under its sequence
+  number.
+
+  An index lists every log.
   """
 
   alias WardrikEvents.CloudEvent
@@ -10,16 +12,16 @@ defmodule WardrikEvents.Log do
   @index "logs/"
   @batch 100
 
-  @doc "Writes `event` at the log's next sequence number, and returns it with that number."
+  @doc "Writes `event` at the log's next sequence number. Returns the event with its `sequence`."
   @spec append(WardrikStore.t(), :ets.table(), String.t(), CloudEvent.t()) ::
           {:ok, CloudEvent.t()} | {:error, term()}
   def append(store, heads, log, event), do: append(store, heads, log, event, 1)
 
-  @doc "Returns the sequence number of the log's last event, or of the last it dropped."
+  @doc "Returns the sequence number of the log's last event. If every event was dropped, returns the last dropped one's."
   @spec last(WardrikStore.t(), String.t()) :: non_neg_integer()
   def last(store, log), do: gallop(store, log, oldest(store, log) - 1, 1)
 
-  @doc "Returns the oldest sequence number the log holds, or will hold next."
+  @doc "Returns the oldest sequence number the log holds. If it holds none, returns the next one it will write."
   @spec oldest(WardrikStore.t(), String.t()) :: pos_integer()
   def oldest(store, log) do
     case WardrikStore.get(store, index_key(log)) do
@@ -29,8 +31,9 @@ defmodule WardrikEvents.Log do
   end
 
   @doc """
-  Reads up to `limit` events after the sequence number `after`, or returns `{:dropped, oldest}`
-  when the log no longer holds the next one.
+  Returns up to `limit` events after the sequence number `after_sequence`.
+
+  Returns `{:dropped, oldest}` if retention dropped the next one.
   """
   @spec read(WardrikStore.t(), String.t(), non_neg_integer(), non_neg_integer()) ::
           {:ok, [CloudEvent.t()]} | {:dropped, pos_integer()}
@@ -42,14 +45,14 @@ defmodule WardrikEvents.Log do
       else: {:ok, taken(store, log, after_sequence + 1, limit)}
   end
 
-  @doc "Lists the logs whose names start with `prefix`."
+  @doc "Returns the logs whose names start with `prefix`."
   @spec logs(WardrikStore.t(), String.t()) :: [String.t()]
   def logs(store, prefix \\ "") do
     for key <- WardrikStore.keys(store, index_key(prefix)),
         do: key |> String.replace_prefix(@index, "") |> URI.decode_www_form()
   end
 
-  @doc "Drops the log's events written before `cutoff`, oldest first."
+  @doc "Drops the log's events written before `cutoff`."
   @spec trim(WardrikStore.t(), String.t(), DateTime.t()) :: :ok | {:error, term()}
   def trim(store, log, cutoff) do
     {dropped, vsn} = lookup_dropped(store, log)

@@ -1,21 +1,21 @@
 # WardrikEvents
 
-Each agent's events as CloudEvents: a log to read back, and a stream to follow.
+Keeps each agent's events as CloudEvents, in a log you can read back and follow.
 
 ## Install
 
 ```elixir
 def deps do
   [
-    {:wardrik_events, "~> 0.1"}
+    {:wardrik_events, "~> 0.1.0-rc.1"}
   ]
 end
 ```
 
 ## Start it
 
-Add `WardrikEvents` to your supervision tree, after a [WardrikStore](https://hexdocs.pm/wardrik_store)
-to keep the logs in, and give it to each [WardrikCore](https://hexdocs.pm/wardrik_core) agent:
+Start `WardrikEvents` after a [WardrikStore](https://hexdocs.pm/wardrik_store), which keeps the
+logs. Give it to each [WardrikCore](https://hexdocs.pm/wardrik_core) agent:
 
 ```elixir
 store = WardrikStore.ETS.new(name: MyApp.Store)
@@ -32,21 +32,22 @@ WardrikCore.start_agent(
 )
 ```
 
-| Key | Takes | Unless set |
+| Option | Takes | Unless set |
 | --- | --- | --- |
-| `name` | the name you read the events by, and the only one you need | required |
-| `store` | the `WardrikStore` to keep the logs in | required |
-| `deployment` | the deployment's name, in each event's `source` | `"local"` |
-| `retention` | the days events are kept, or `:infinity` | 30 |
+| `:name` | what you reach the events by | required |
+| `:store` | the `WardrikStore` to keep the logs in | required |
+| `:deployment` | the deployment's name, in each event's `source` | `"local"` |
+| `:retention` | days events are kept, or `:infinity` | `30` |
 
-`WardrikStore.ETS` keeps events in memory, for development and tests. To keep them on disk, use
-`WardrikStore.EKV`, with the `ekv` dependency. Every function takes the name you gave, and raises
-saying so where it isn't started.
+`WardrikStore.ETS` keeps events in memory, for development and tests. Use `WardrikStore.EKV` to
+keep them on disk.
+
+Every function takes the name you gave. It raises if the events aren't started.
 
 ## What an agent writes
 
-Each agent writes one log, named by its id. Each event in it is a
-[CloudEvent](https://cloudevents.io) of [WardrikProtocol](https://hexdocs.pm/wardrik_protocol):
+Each agent writes one log, named by its id. Each event is a [CloudEvent](https://cloudevents.io)
+from [WardrikProtocol](https://hexdocs.pm/wardrik_protocol):
 
 ```elixir
 %{
@@ -62,16 +63,16 @@ Each agent writes one log, named by its id. Each event in it is a
 }
 ```
 
-`sequence` counts up in each log. A run's events share its trace, so `traceparent` ties them
-together.
+* `sequence` counts up in each log.
+* A run's events share its trace, so `traceparent` ties them together.
 
 Some events are live: `message.delta`, `reasoning.delta`, `tool_call.progress` and
-`activity.changed`. They reach whoever is following, and are never kept, so they carry no
+`activity.changed`. They reach whoever is following, but they're never kept, so they have no
 `sequence`. The event that completes them is kept.
 
 ## Read a log back
 
-Name the logs with patterns, where `*` stands for any run of characters and `?` for one:
+Name logs with patterns. `*` matches any run of characters, and `?` matches one:
 
 ```elixir
 WardrikEvents.page(MyApp.Events, ["acme/*"], limit: 100)
@@ -88,11 +89,12 @@ WardrikEvents.page(MyApp.Events, ["acme/*"], limit: 100)
 WardrikEvents.page(MyApp.Events, ["acme/*"], after: "eyJhY21lL3RyaWFnZSI6NDN9")
 ```
 
-Across several logs, events come oldest first. `next` is a cursor, the text to pass as `:after` to
-read on. `head/2` is the cursor at the end of the logs, to read only what comes after now.
+* Events come oldest first, across every log matched.
+* `next` is a cursor. Pass it as `:after` to read on.
+* `head/2` returns the cursor at the end of the logs, to read only newer events.
 
-Events older than the retention are dropped, hourly. A reader whose cursor points into what was
-dropped gets a `wardrik.events.dropped` first, saying how many it missed, then reads on.
+Events older than the retention are dropped hourly. If your cursor points at dropped events, you
+get a `wardrik.events.dropped` first, saying how many you missed. Then reading carries on.
 
 ## Follow it
 
@@ -105,17 +107,18 @@ Enum.each(stream, fn {event, cursor} ->
 end)
 ```
 
-The stream reads on from `:after`, or from what's written next without one, and follows the logs
-for as long as you take from it, live events too. Pass `:types`, like `["wardrik.run.completed"]`,
-to take only those. A `wardrik.events.dropped` comes whatever the types.
+The stream reads on from `:after`. Without it, the stream starts at what's written next. It follows
+the logs, live events too, for as long as you take from it.
 
-Notice you never miss an event or see one twice between reading back and following. The stream
-subscribes before it reads back, and drops what it already handed over.
+Pass `:types`, as `["wardrik.run.completed"]`, to take only those. A `wardrik.events.dropped`
+always comes through.
+
+You never miss an event or see one twice between reading back and following.
 
 ## Follow it into your app
 
-A listener hands each event to your module, with the cursor past it, as text. Save the cursor with
-what you did, and it carries on from there after a restart:
+A listener hands each event to your module, with the cursor past it as text. Save the cursor with
+your work, and the listener carries on from there after a restart:
 
 ```elixir
 defmodule MyApp.Runs do
@@ -138,15 +141,15 @@ end
 children = [{MyApp.Runs, events: MyApp.Events, types: ["wardrik.run.completed"]}]
 ```
 
-| Key | Takes | Unless set |
+| Option | Takes | Unless set |
 | --- | --- | --- |
-| `events` | the name of your `WardrikEvents` | required |
-| `resources` | the patterns of the logs to follow | `["*"]`, every agent |
-| `types` | the event types to take | every type |
-| `after` | the cursor to start after, when you don't define `cursor/1` | what's written next |
+| `:events` | the name of your `WardrikEvents` | required |
+| `:resources` | patterns of the logs to follow | `["*"]`, every agent |
+| `:types` | the event types to take | every type |
+| `:after` | the cursor to start after, if you don't define `cursor/1` | what's written next |
 
-Each event is handed over at least once. A `handle/2` that raises or returns anything but `:ok`
-restarts the listener from the cursor you saved, so drop a repeat by the event's `id`.
+Each event is handed over at least once. If `handle/2` raises or returns anything but `:ok`, the
+listener restarts from what `cursor/1` returns. Drop a repeat by the event's `id`.
 
 ## What an agent is doing now
 
@@ -159,14 +162,16 @@ WardrikEvents.activity(MyApp.Events, "acme/triage")
 #=> }
 ```
 
-`doing` is every tool call running, oldest first, or else the last thing the agent started, like a
-model call or a wait on a person. It's empty once a run ends. `pending` counts the messages waiting
-behind it. Each change is an `activity.changed` to whoever follows the agent's log.
+* `doing` is every tool call running, oldest first. With none running, it's the last thing the
+  agent started, like a model call or a wait on a person. It's empty once a run ends.
+* `pending` counts the messages waiting for a run.
+
+Each change is sent as an `activity.changed` to whoever follows the agent's log.
 
 ## Views
 
-A view folds a log, oldest first, into what a surface shows of it. `view/4` folds every event a
-log keeps, and returns the cursor after them, to follow on from:
+A view folds a log, oldest first, into what a screen shows. `view/4` folds every kept event, and
+returns the cursor after them:
 
 ```elixir
 {timeline, cursor} = WardrikEvents.view(MyApp.Events, "acme/triage", WardrikEvents.Timeline)
@@ -179,13 +184,13 @@ WardrikEvents.Timeline.items(timeline)
 | `WardrikEvents.Runs` | each run, with who started it, how long it took, its tool calls, tokens and cost, and the totals |
 | `WardrikEvents.Activity` | what the agent is doing now, as `activity/2` returns it |
 
-To keep a view current, fold each event the stream brings into the same state. Write your own
-with the `WardrikEvents.View` behaviour.
+To keep a view current, stream the log after `cursor` and fold each event into the same state.
+Write your own view with the `WardrikEvents.View` behaviour.
 
 ## Write your own events
 
-A host writes what it does to an agent into the agent's log, as core's events are written: kept,
-sent to subscribers, and folded into its activity. Each is a type of the protocol's:
+A host can write what it does to an agent into the agent's log. The event is kept, sent to
+subscribers and folded into the activity, like the agent's own. Its type comes from the protocol:
 
 ```elixir
 data = %{"trigger" => %{"name" => "daily"}, "status" => "asked"}
@@ -194,7 +199,7 @@ data = %{"trigger" => %{"name" => "daily"}, "status" => "asked"}
 
 ## The audit
 
-The audit is one log for the deployment, of what people changed and who changed it:
+The audit is one log for the deployment. It records what people changed, and who changed it:
 
 ```elixir
 change = {"agent.forgotten", "agents/acme/triage", %{"agent" => %{"id" => "acme/triage"}}}
@@ -203,9 +208,10 @@ change = {"agent.forgotten", "agents/acme/triage", %{"agent" => %{"id" => "acme/
 %{events: changes, next: next} = WardrikEvents.audit(MyApp.Events, limit: 100)
 ```
 
-`:actor` is the `WardrikCore.Principal` who made the change, and `:assumed_by` who acted for them,
-first to last. The audit is kept apart from the agents' logs, and is dropped with the same
-retention.
+* `:actor` is the `WardrikCore.Principal` who made the change.
+* `:assumed_by` lists who acted for them, first to last.
+
+The audit is kept apart from the agents' logs. It's dropped with the same retention.
 
 ## License
 

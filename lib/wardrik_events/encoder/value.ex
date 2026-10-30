@@ -8,7 +8,7 @@ defmodule WardrikEvents.Encoder.Value do
 
   @limit 64 * 1024
 
-  @doc "Encodes a message, under the id in its metadata."
+  @doc "Encodes a message. Uses `id`, or the id in its metadata."
   @spec message(ReqLLM.Message.t(), String.t() | nil) :: map()
   def message(%ReqLLM.Message{} = message, id \\ nil) do
     %{"role" => Atom.to_string(message.role), "parts" => parts(message)}
@@ -31,14 +31,14 @@ defmodule WardrikEvents.Encoder.Value do
 
   def error(reason), do: tagged(nil, reason)
 
-  @doc "Encodes the tokens a model call read and wrote, or `nil` when it read none."
+  @doc "Encodes the tokens a model call read and wrote. Returns `nil` if there are none."
   @spec usage(map()) :: map() | nil
   def usage(%{input_tokens: input, output_tokens: output}),
     do: %{"input_tokens" => input, "output_tokens" => output}
 
   def usage(_measurements), do: nil
 
-  @doc "Encodes what a call cost in dollars as whole micro-dollars, or `nil` when unpriced."
+  @doc "Encodes a call's cost as whole micro-dollars. Returns `nil` if it isn't priced."
   @spec cost(map(), String.t()) :: map() | nil
   def cost(%{usd: usd}, source), do: %{"micro_usd" => round(usd * 1_000_000), "source" => source}
   def cost(_measurements, _source), do: nil
@@ -50,7 +50,7 @@ defmodule WardrikEvents.Encoder.Value do
   def principal(%Principal{id: id, attributes: attributes}),
     do: put(%{"id" => id}, "name", attributes[:name])
 
-  @doc "Encodes any term as JSON: maps get string keys, atoms become strings, structs become maps."
+  @doc "Encodes any term as JSON. Maps get string keys, atoms become strings and structs become maps."
   @spec json(term()) :: term()
   def json(%Principal{} = principal), do: principal(principal)
   def json(%DateTime{} = time), do: DateTime.to_iso8601(time)
@@ -62,7 +62,7 @@ defmodule WardrikEvents.Encoder.Value do
   def json(value) when is_binary(value) or is_number(value), do: value
   def json(value), do: inspect(value)
 
-  @doc "Puts `value` under `key`, cut short and marked when it's longer than 64 KiB."
+  @doc "Puts `value` under `key`. If it's longer than 64 KiB, cuts it short and sets `\"truncated\"`."
   @spec capped(map(), String.t(), term()) :: map()
   def capped(map, key, value) do
     encoded = value |> json() |> JSON.encode!()

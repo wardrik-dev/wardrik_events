@@ -1,5 +1,5 @@
 defmodule WardrikEvents.Reader do
-  @moduledoc "Reads kept events back from the logs a reader's patterns cover, as entries of their log and place."
+  @moduledoc "Reads kept events back from the logs patterns match."
 
   alias WardrikEvents.CloudEvent
   alias WardrikEvents.Cursor
@@ -8,10 +8,10 @@ defmodule WardrikEvents.Reader do
 
   @chunk 500
 
-  @typedoc "An event with its log, and its place there."
+  @typedoc "`{log, sequence, event}`."
   @type entry() :: {String.t(), non_neg_integer(), CloudEvent.t()}
 
-  @doc "Lists the logs `resources` cover."
+  @doc "Returns the logs `resources` match."
   @spec covered(WardrikStore.t(), [String.t()]) :: [String.t()]
   def covered(store, resources) do
     resources
@@ -21,12 +21,12 @@ defmodule WardrikEvents.Reader do
     |> Enum.uniq()
   end
 
-  @doc "Returns the cursor at the end of every log `resources` cover."
+  @doc "Returns the cursor at the end of the logs `resources` match."
   @spec head(WardrikStore.t(), [String.t()]) :: Cursor.t()
   def head(store, resources),
     do: store |> covered(resources) |> Map.new(fn log -> {log, Log.last(store, log)} end)
 
-  @doc "Reads up to `limit` events after `cursor` from the logs `resources` cover, oldest first."
+  @doc "Returns up to `limit` entries after `cursor` from the logs `resources` match, oldest first, and the cursor after them."
   @spec page(map(), [String.t()], Cursor.t(), pos_integer()) :: {[entry()], Cursor.t()}
   def page(settings, resources, cursor, limit) do
     read =
@@ -39,8 +39,9 @@ defmodule WardrikEvents.Reader do
   end
 
   @doc """
-  Reads up to `limit` entries of `log` after the sequence number `at`, led by a
-  `wardrik.events.dropped` when the log no longer holds the next one.
+  Returns up to `limit` entries of `log` after the sequence number `at`.
+
+  If retention dropped the next one, the entries start with a `wardrik.events.dropped`.
   """
   @spec entries(map(), String.t(), non_neg_integer(), pos_integer()) :: [entry()]
   def entries(settings, log, at, limit) do
@@ -62,7 +63,7 @@ defmodule WardrikEvents.Reader do
     |> Stream.concat()
   end
 
-  @doc "Moves `cursor` past each entry."
+  @doc "Returns `cursor` moved past each of `entries`."
   @spec advanced(Cursor.t(), [entry()]) :: Cursor.t()
   def advanced(cursor, entries) do
     Enum.reduce(entries, cursor, fn {log, sequence, _event}, cursor ->

@@ -1,7 +1,8 @@
 defmodule WardrikEvents.Tail do
   @moduledoc """
-  A tail reads the logs a reader's patterns cover from its cursor, then follows them as they're
-  written, taking each kept event once and in order.
+  Reads logs back from a cursor, then follows them as they're written.
+
+  Each kept event comes once, in order.
   """
 
   alias WardrikEvents.Cursor
@@ -10,7 +11,7 @@ defmodule WardrikEvents.Tail do
 
   @page 500
 
-  @doc "Streams `{event, cursor}` from after `cursor`, or from what's written next when it's `nil`."
+  @doc "Streams `{event, cursor}` after `cursor`. With `nil`, starts at what's written next."
   @spec stream(map(), [String.t()], Cursor.t() | nil, [String.t()] | :all) :: Enumerable.t()
   def stream(settings, resources, cursor, types) do
     fn -> open(settings, resources, cursor) end

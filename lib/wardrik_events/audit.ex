@@ -1,7 +1,8 @@
 defmodule WardrikEvents.Audit do
   @moduledoc """
-  The audit is one log for the deployment of what people changed and who changed it, beside each
-  agent's own.
+  Keeps the audit: one log for the deployment of what people changed and who changed it.
+
+  It's kept apart from the agents' logs. See `WardrikEvents.record/3` and `WardrikEvents.audit/2`.
   """
 
   alias WardrikEvents.CloudEvent
@@ -11,7 +12,7 @@ defmodule WardrikEvents.Audit do
 
   @log "audit"
 
-  @doc "Writes `change`, a `{type, subject, data}`, with who made it and who acted for them."
+  @doc "Writes `change`, a `{type, subject, data}`, with its `:actor` and `:assumed_by`."
   @spec record(map(), {String.t(), String.t(), map()}, keyword()) ::
           {:ok, CloudEvent.t()} | {:error, term()}
   def record(settings, {type, subject, data}, opts) do
@@ -31,7 +32,7 @@ defmodule WardrikEvents.Audit do
     Log.append(settings.audit, settings.heads, @log, event)
   end
 
-  @doc "Reads up to `limit` changes after the sequence number `at`, and the sequence after them."
+  @doc "Returns up to `limit` changes after the sequence number `at`, and the sequence number of the last one."
   @spec page(map(), non_neg_integer(), pos_integer()) :: {[CloudEvent.t()], non_neg_integer()}
   def page(settings, at, limit) do
     settings

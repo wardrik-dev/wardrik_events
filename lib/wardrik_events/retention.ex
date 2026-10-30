@@ -1,5 +1,5 @@
 defmodule WardrikEvents.Retention do
-  @moduledoc "Retention drops each log's events once they're older than the days the events keep them."
+  @moduledoc "Drops events older than `:retention` days, once an hour. See `WardrikEvents.start_link/1`."
 
   use GenServer
 
@@ -12,7 +12,7 @@ defmodule WardrikEvents.Retention do
   @doc false
   def start_link(settings), do: GenServer.start_link(__MODULE__, settings)
 
-  @doc "Drops the events written before `cutoff` from every log."
+  @doc "Drops the events written before `cutoff` from every log in `store`."
   @spec trim(WardrikStore.t(), DateTime.t()) :: :ok
   def trim(store, cutoff) do
     for log <- Log.logs(store), do: trim(store, log, cutoff)

@@ -1,11 +1,16 @@
 defmodule WardrikEvents.Runs do
   @moduledoc """
-  What an agent has done: each run, with who started it, how long it took, the model, its tool
-  calls, the tokens it read and wrote and what it cost, its subagents' among them, and the totals
-  across them.
+  A view of an agent's runs, and the totals across them.
 
       {runs, _cursor} = WardrikEvents.view(MyApp.Events, "acme/triage", WardrikEvents.Runs)
+
+      WardrikEvents.Runs.runs(runs)
+      #=> [%{id: "0af7...", status: :completed, model: "anthropic:claude-haiku-4-5", ...}]
+
       WardrikEvents.Runs.totals(runs)
+      #=> %{runs: 12, failed: 1, tool_calls: 40, input_tokens: 51_200, output_tokens: 8_300, cost_micro_usd: 91_000, last_at: "..."}
+
+  Each run counts its tool calls, tokens and cost, including those of its subagents. See `t:run/0`.
   """
 
   @behaviour WardrikEvents.View
@@ -68,7 +73,12 @@ defmodule WardrikEvents.Runs do
   @spec runs(t()) :: [run()]
   def runs(%__MODULE__{runs: runs, order: order}), do: Enum.map(order, &Map.fetch!(runs, &1))
 
-  @doc "Returns the totals across every run, and when the last one started."
+  @doc """
+  Returns the totals across every run.
+
+  Has `:runs`, `:failed`, `:tool_calls`, `:input_tokens`, `:output_tokens`, `:cost_micro_usd`, and
+  `:last_at`, when the newest run started.
+  """
   @spec totals(t()) :: map()
   def totals(state) do
     runs = runs(state)
@@ -82,7 +92,7 @@ defmodule WardrikEvents.Runs do
     })
   end
 
-  @doc "Returns how long `run` took in milliseconds, or nil while it goes on."
+  @doc "Returns how long `run` took in milliseconds, or `nil` while it runs."
   @spec duration_ms(run()) :: non_neg_integer() | nil
   def duration_ms(%{started_at: started, finished_at: finished}) when is_binary(finished) do
     {:ok, from, _offset} = DateTime.from_iso8601(started)

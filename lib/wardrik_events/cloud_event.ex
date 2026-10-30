@@ -1,6 +1,7 @@
 defmodule WardrikEvents.CloudEvent do
   @moduledoc """
-  A CloudEvent is an event as Wardrik sends it: a map with string keys, its data under `"data"`.
+  Builds events as Wardrik sends them: CloudEvents maps with string keys and the payload under
+  `"data"`.
   """
 
   alias WardrikCore.Span
@@ -9,8 +10,23 @@ defmodule WardrikEvents.CloudEvent do
   @type t() :: %{String.t() => term()}
 
   @doc """
-  Builds an agent's event of `type`, like `"run.started"`, about `subject`. Takes `:source` in
-  place of `:agent_id` for an event that isn't an agent's.
+  Builds an event of `type` about `subject`.
+
+      WardrikEvents.CloudEvent.new("run.started", "runs/0af7...", data,
+        deployment: "acme-prod",
+        agent_id: "acme/triage",
+        time: DateTime.utc_now()
+      )
+
+  `type` leaves out the `wardrik.` prefix, which is added.
+
+  ## Options
+
+    * `:time` - required. When it happened.
+    * `:deployment` - the deployment's name. Required unless `:source` is set.
+    * `:agent_id` - the agent the event is about. Required unless `:source` is set.
+    * `:source` - the event's `source`, for an event that isn't an agent's.
+    * `:span` - the `WardrikCore.Span` it happened in. A new root span unless set.
   """
   @spec new(String.t(), String.t(), map(), keyword()) :: t()
   def new(type, subject, data, opts) do
@@ -32,7 +48,7 @@ defmodule WardrikEvents.CloudEvent do
     |> put_present("parentspanid", span.parent)
   end
 
-  @doc "Puts the event's place in its log, as CloudEvents' `sequence` extension."
+  @doc "Puts the event's place in its log as the `sequence` extension, padded to 12 digits."
   @spec sequenced(t(), pos_integer()) :: t()
   def sequenced(event, sequence),
     do: Map.put(event, "sequence", sequence |> Integer.to_string() |> String.pad_leading(12, "0"))
@@ -41,14 +57,14 @@ defmodule WardrikEvents.CloudEvent do
   @spec source(String.t(), String.t()) :: String.t()
   def source(deployment, agent_id), do: "wardrik://#{deployment}/agents/#{agent_id}"
 
-  @doc "Returns the `source` of the changes people made, in the audit log."
+  @doc "Returns the `source` of the audit's changes."
   @spec audit_source(String.t()) :: String.t()
   def audit_source(deployment), do: "wardrik://#{deployment}/audit"
 
   defp agent_source(opts),
     do: source(Keyword.fetch!(opts, :deployment), Keyword.fetch!(opts, :agent_id))
 
-  @doc "Returns the W3C trace id of the event's `traceparent`: its run's id."
+  @doc "Returns the trace id in the event's `traceparent`, which is its run's id. Returns `nil` if there's none."
   @spec trace_id(t()) :: String.t() | nil
   def trace_id(%{"traceparent" => "00-" <> <<trace_id::binary-32, "-", _rest::binary>>}),
     do: trace_id
