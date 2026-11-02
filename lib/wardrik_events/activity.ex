@@ -1,6 +1,6 @@
 defmodule WardrikEvents.Activity do
   @moduledoc """
-  A view of what an agent is doing now, as the protocol's `activity`.
+  A view of what an agent is doing now. `WardrikEvents.activity/2` returns the current one.
 
       %{
         "doing" => [%{"type" => "wardrik.tool_call.started", "tool" => %{"name" => "github__search_issues", "call" => %{"id" => "call_1"}}, "since" => "..."}],
@@ -8,13 +8,10 @@ defmodule WardrikEvents.Activity do
         "pending" => 1
       }
 
-    * `"doing"` - every tool call running, oldest first, each with its `"since"`. With no tool
-      call running, the last thing the agent started, such as a model call or a wait on a person.
-      Empty once a run ends.
+    * `"doing"` - every tool call running, oldest first. With none, the last thing the agent
+      started, like a model call. Empty once a run ends.
     * `"since"` - when `"doing"` last changed.
     * `"pending"` - how many messages wait for a run.
-
-  `WardrikEvents.activity/2` returns the current one.
 
   ## Options
 

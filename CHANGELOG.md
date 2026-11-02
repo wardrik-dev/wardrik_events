@@ -1,24 +1,22 @@
 # Changelog
 
-## 0.1.0-rc.2
+## 0.1.0-rc.2 (2026-11-02)
 
 ### Breaking
 
-- `WardrikEvents.CloudEvent.new/2`, `Heads.update/3`, `Log.append/4`, `Log.read/3`,
-  `Reader.entries/3`, `Reader.page/3` and `Tail.stream/3` take their arguments by name, as
-  `subject:`, `data:`, `initial:`, `with:`, `heads:`, `after:`, `limit:` and `types:`.
-- A log is `{agent, conversation}`, with `conversation` `nil` for the agent's own. `append/4`,
-  `activity/2`, `view/4` and `Log` take a log, not an agent ID.
-- `WardrikEvents.Pattern` is gone, and with it `*` and `?`. Functions take resources: agent IDs,
-  each covering its own log and its conversations', exact logs, or `:all`. `covers?/2` says
-  whether a resource covers a log.
-- Cursors map logs to sequences, and encode as a JSON list of `[agent, conversation, sequence]`.
-  Earlier cursors don't decode.
-- `CloudEvent.new/2` takes `log:` instead of `agent_id:`. Events carry `agent` and, for a
-  conversation, `conversation` extension attributes. `source` URL-encodes the agent.
-- `agent.started` carries `conversation` only for a conversation.
+- Each conversation has its own log, `{agent, conversation}`. An agent ID is never parsed.
+- `append/4`, `activity/2` and `view/4` take an agent ID for its main conversation, or
+  `{agent, conversation}` for another: `WardrikEvents.activity(MyApp.Events, "agt_1")`.
+- `WardrikEvents.Pattern`, with `*` and `?`, is gone. Reading functions take a list of agent IDs,
+  each with all its conversations, and `{agent, conversation}` logs, or `:all`. `covers?/2` says
+  whether one covers a log.
+- Events carry `agent` and, for a conversation, `conversation` attributes. `source` URL-encodes
+  the agent ID. `agent.started` carries `conversation` only for a conversation.
+- `CloudEvent.new/2` takes its arguments by name, with `log:` in place of `agent_id:`.
+- Cursors encode a list of `[agent, conversation, sequence]`. rc.1 cursors don't decode.
 - `WardrikEvents.Listener` follows `:all` unless `:resources` is set.
-- Messages to subscribers are `{WardrikEvents, {agent, conversation}, event}`.
+- Subscribers receive `{WardrikEvents, {agent, conversation}, event}`.
+- Internal modules, such as `Log`, `Reader`, `Tail` and `Heads`, are hidden from the docs.
 
 ## 0.1.0-rc.1 (2026-10-30)
 

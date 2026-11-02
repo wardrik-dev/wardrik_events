@@ -1,5 +1,5 @@
 defmodule WardrikEvents.Reader do
-  @moduledoc "Reads kept events back from the logs resources cover."
+  @moduledoc false
 
   alias WardrikEvents.CloudEvent
   alias WardrikEvents.Cursor

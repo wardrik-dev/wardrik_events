@@ -1,7 +1,6 @@
 defmodule WardrikEvents.CloudEvent do
   @moduledoc """
-  Builds events as Wardrik sends them: CloudEvents maps with string keys and the payload under
-  `"data"`.
+  Builds Wardrik's CloudEvents: maps with string keys, and the payload under `"data"`.
   """
 
   alias WardrikCore.Span
@@ -10,7 +9,7 @@ defmodule WardrikEvents.CloudEvent do
   @type t() :: %{String.t() => term()}
 
   @doc """
-  Builds an event of `type` about `:subject`, with `:data` as its payload.
+  Builds an event of `type`, without its `wardrik.` prefix.
 
       WardrikEvents.CloudEvent.new("run.started",
         subject: "runs/0af7...",
@@ -20,17 +19,14 @@ defmodule WardrikEvents.CloudEvent do
         time: DateTime.utc_now()
       )
 
-  `type` leaves out the `wardrik.` prefix, which is added.
-
   ## Options
 
     * `:subject` - required. What the event is about.
     * `:data` - required. The payload.
     * `:time` - required. When it happened.
     * `:deployment` - the deployment's name. Required unless `:source` is set.
-    * `:log` - the log the event is in, as `{agent, conversation}`. It sets the `agent` and
-      `conversation` extensions. Required unless `:source` is set.
-    * `:source` - the event's `source`, for an event that isn't an agent's.
+    * `:log` - the event's `{agent, conversation}`. Required unless `:source` is set.
+    * `:source` - the `source` of an event that isn't an agent's.
     * `:span` - the `WardrikCore.Span` it happened in. A new root span unless set.
   """
   @spec new(String.t(), keyword()) :: t()
@@ -54,17 +50,17 @@ defmodule WardrikEvents.CloudEvent do
     |> logged(opts[:log])
   end
 
-  @doc "Puts the event's place in its log as the `sequence` extension, padded to 12 digits."
+  @doc "Puts the event's `sequence`, padded to 12 digits."
   @spec sequenced(t(), pos_integer()) :: t()
   def sequenced(event, sequence),
     do: Map.put(event, "sequence", sequence |> Integer.to_string() |> String.pad_leading(12, "0"))
 
-  @doc "Returns the `source` of an agent's events. The agent's ID is URL-encoded."
+  @doc "Returns the `source` of an agent's events."
   @spec source(String.t(), String.t()) :: String.t()
   def source(deployment, agent),
     do: "wardrik://#{deployment}/agents/" <> URI.encode(agent, &URI.char_unreserved?/1)
 
-  @doc "Returns the `subject` of an event about the agent `agent`. Its ID is URL-encoded."
+  @doc "Returns the `subject` of an event about `agent`, as `\"agents/agt_1\"`."
   @spec subject(String.t()) :: String.t()
   def subject(agent), do: "agents/" <> URI.encode(agent, &URI.char_unreserved?/1)
 
@@ -82,7 +78,7 @@ defmodule WardrikEvents.CloudEvent do
   defp logged(event, {agent, conversation}),
     do: event |> Map.put("agent", agent) |> put_present("conversation", conversation)
 
-  @doc "Returns the trace id in the event's `traceparent`, which is its run's id. Returns `nil` if there's none."
+  @doc "Returns the trace ID in the event's `traceparent`, which is its run's ID, or `nil`."
   @spec trace_id(t()) :: String.t() | nil
   def trace_id(%{"traceparent" => "00-" <> <<trace_id::binary-32, "-", _rest::binary>>}),
     do: trace_id

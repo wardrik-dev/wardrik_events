@@ -1,7 +1,5 @@
 defmodule WardrikEvents.Encoder do
-  @moduledoc """
-  Encodes an agent's `WardrikCore.Event`s as the CloudEvents of `WardrikProtocol`.
-  """
+  @moduledoc false
 
   alias WardrikCore.Authorization
   alias WardrikCore.Event

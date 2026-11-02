@@ -2,7 +2,7 @@ defmodule WardrikEvents.Runs do
   @moduledoc """
   A view of an agent's runs, and the totals across them.
 
-      {runs, _cursor} = WardrikEvents.view(MyApp.Events, {"agt_1", nil}, WardrikEvents.Runs)
+      {runs, _cursor} = WardrikEvents.view(MyApp.Events, "agt_1", WardrikEvents.Runs)
 
       WardrikEvents.Runs.runs(runs)
       #=> [%{id: "0af7...", status: :completed, model: "anthropic:claude-haiku-4-5", ...}]
@@ -10,7 +10,7 @@ defmodule WardrikEvents.Runs do
       WardrikEvents.Runs.totals(runs)
       #=> %{runs: 12, failed: 1, tool_calls: 40, input_tokens: 51_200, output_tokens: 8_300, cost_micro_usd: 91_000, last_at: "..."}
 
-  Each run counts its tool calls, tokens and cost, including those of its subagents. See `t:run/0`.
+  A run's tool calls, tokens and cost include its subagents'. See `t:run/0`.
   """
 
   @behaviour WardrikEvents.View

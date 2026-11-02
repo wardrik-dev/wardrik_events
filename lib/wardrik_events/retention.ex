@@ -1,5 +1,5 @@
 defmodule WardrikEvents.Retention do
-  @moduledoc "Drops events older than `:retention` days, once an hour. See `WardrikEvents.start_link/1`."
+  @moduledoc false
 
   use GenServer
 

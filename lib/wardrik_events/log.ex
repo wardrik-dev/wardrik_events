@@ -1,11 +1,5 @@
 defmodule WardrikEvents.Log do
-  @moduledoc """
-  Reads and writes one log: the kept events of an agent or one of its conversations, in a store,
-  in order, each under its sequence number.
-
-  An index lists every log. Each key holds the agent and conversation each URL-encoded, so no ID
-  is ever split.
-  """
+  @moduledoc false
 
   alias WardrikEvents.CloudEvent
 

@@ -80,7 +80,7 @@ defmodule WardrikEvents.AgentLogTest do
                     %{"type" => "wardrik.activity.changed", "data" => %{"activity" => idle}}}
 
     assert %{"doing" => [], "pending" => 0} = idle
-    assert WardrikEvents.activity(:agent_log_events, {"agt_1", nil}) == idle
+    assert WardrikEvents.activity(:agent_log_events, "agt_1") == idle
   end
 
   test "a conversation's turn is kept in the conversation's own log" do
@@ -125,7 +125,7 @@ defmodule WardrikEvents.AgentLogTest do
     streamed()
 
     assert {timeline, %{{"agt_1", nil} => 6}} =
-             WardrikEvents.view(:agent_log_events, {"agt_1", nil}, Timeline)
+             WardrikEvents.view(:agent_log_events, "agt_1", Timeline)
 
     assert [
              %{kind: :user, text: "Say hi"},

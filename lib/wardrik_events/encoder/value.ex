@@ -1,7 +1,5 @@
 defmodule WardrikEvents.Encoder.Value do
-  @moduledoc """
-  Encodes the values inside an event's data as JSON-ready maps with string keys.
-  """
+  @moduledoc false
 
   alias ReqLLM.Message.ContentPart
   alias WardrikCore.Principal

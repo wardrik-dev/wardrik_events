@@ -1,8 +1,5 @@
 defmodule WardrikEvents.Heads do
-  @moduledoc """
-  Holds the events' settings, each log's last sequence number and each agent's activity in an ETS
-  table.
-  """
+  @moduledoc false
 
   use GenServer
 

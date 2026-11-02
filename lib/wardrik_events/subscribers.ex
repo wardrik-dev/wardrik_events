@@ -1,10 +1,5 @@
 defmodule WardrikEvents.Subscribers do
-  @moduledoc """
-  Sends each event, as it's written, to the processes subscribed to its log.
-
-  Each agent's logs share one topic, named by the whole agent ID. Subscribers to `:all` share
-  another.
-  """
+  @moduledoc false
 
   @all "all"
 

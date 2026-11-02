@@ -1,9 +1,5 @@
 defmodule WardrikEvents.Tail do
-  @moduledoc """
-  Reads logs back from a cursor, then follows them as they're written.
-
-  Each kept event comes once, in order.
-  """
+  @moduledoc false
 
   alias WardrikEvents.Cursor
   alias WardrikEvents.Reader

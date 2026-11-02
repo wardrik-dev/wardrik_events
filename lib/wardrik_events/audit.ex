@@ -1,9 +1,5 @@
 defmodule WardrikEvents.Audit do
-  @moduledoc """
-  Keeps the audit: one log for the deployment of what people changed and who changed it.
-
-  It's kept apart from the agents' logs. See `WardrikEvents.record/3` and `WardrikEvents.audit/2`.
-  """
+  @moduledoc false
 
   alias WardrikEvents.CloudEvent
   alias WardrikEvents.Encoder.Value

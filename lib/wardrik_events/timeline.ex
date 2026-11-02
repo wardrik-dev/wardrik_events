@@ -1,14 +1,13 @@
 defmodule WardrikEvents.Timeline do
   @moduledoc """
-  A view of an agent's conversation: each message people sent, and each run that answered, step
-  by step.
+  A view of a conversation: each message people sent, and each run that answered, step by step.
 
-      {timeline, cursor} = WardrikEvents.view(MyApp.Events, {"agt_1", nil}, WardrikEvents.Timeline)
+      {timeline, cursor} = WardrikEvents.view(MyApp.Events, "agt_1", WardrikEvents.Timeline)
       WardrikEvents.Timeline.items(timeline)
 
   ## Items
 
-  Each item is a map with an `:id` and a `:kind`.
+  Each item has an `:id` and a `:kind`:
 
     * `:user` - a message someone sent. Has `:text`, `:sender` and `:at`.
     * `:run` - the agent's answer. Has `:status`, `:steps` (oldest first), `:model`,
@@ -17,7 +16,7 @@ defmodule WardrikEvents.Timeline do
 
   ## Steps
 
-  Each step is a map with a `:type`.
+  Each step has a `:type`:
 
     * `:thinking` and `:text` - have `:text`, and `:live` while it streams.
     * `:tool` - has `:name`, `:arguments`, `:status`, `:result` and `:error`. `:status` is

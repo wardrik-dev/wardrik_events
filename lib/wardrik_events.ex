@@ -1,6 +1,6 @@
 defmodule WardrikEvents do
   @moduledoc """
-  Keeps each agent's events as CloudEvents, in a log you can read back and follow.
+  Keeps each agent's events as CloudEvents, in logs you can read back and follow.
 
       children = [
         {WardrikStore, store},
@@ -16,14 +16,13 @@ defmodule WardrikEvents do
       {:ok, stream} = WardrikEvents.stream(MyApp.Events, ["agt_1"])
       Enum.each(stream, fn {event, cursor} -> save(event, WardrikEvents.Cursor.encode(cursor)) end)
 
-  Each agent writes one log, and each of its conversations one more: `{agent, conversation}`,
-  with `conversation` `nil` for the agent's own. Functions take the logs to read as resources:
+  Each conversation has its own log, `{agent, conversation}`. The main one is `{agent, nil}`.
+  Functions that read take a list of:
 
-    * `"agt_1"` - the agent's log and its conversations'.
-    * `{"agt_1", "C1"}` - one log.
-    * `:all` - every log.
+    * `"agt_1"` - the agent and all its conversations.
+    * `{"agt_1", "C1"}` - one conversation.
 
-  Functions that take the events' name raise `ArgumentError` if they aren't started.
+  Or `:all`, for every agent. Every function raises `ArgumentError` if `name` isn't started.
   """
 
   @behaviour WardrikCore.Events
@@ -44,10 +43,13 @@ defmodule WardrikEvents do
   alias WardrikEvents.Subscribers
   alias WardrikEvents.Tail
 
-  @typedoc "One log: an agent's, or with `conversation`, one of its conversations'."
+  @typedoc "One conversation's log. `conversation` is `nil` for the agent's main one."
   @type log() :: {agent :: String.t(), conversation :: String.t() | nil}
 
-  @typedoc "The logs to read: agents, each with its conversations, and single logs; or `:all`."
+  @typedoc "An agent ID, for its main conversation, or a `t:log/0`."
+  @type agent() :: String.t() | log()
+
+  @typedoc "The logs to read: agent IDs, each with all its conversations, and single logs; or `:all`."
   @type resources() :: [String.t() | log()] | :all
 
   @default_limit 100
@@ -63,8 +65,7 @@ defmodule WardrikEvents do
     * `:name` - required. What the events are reached by.
     * `:store` - required. The `WardrikStore` to keep the logs in.
     * `:deployment` - the deployment's name in each event's `source`. `"local"` unless set.
-    * `:retention` - days events are kept, or `:infinity`. `30` unless set. Older events are
-      dropped hourly.
+    * `:retention` - days events are kept, or `:infinity`. `30` unless set.
   """
   @spec start_link(keyword()) :: Supervisor.on_start()
   def start_link(opts) do
@@ -99,20 +100,20 @@ defmodule WardrikEvents do
   def covers?(_resource, _log), do: false
 
   @doc """
-  Writes an event into `log`.
+  Writes `{type, subject, data}` to an agent's log, like the agent's own events.
 
       data = %{"trigger" => %{"name" => "daily"}, "status" => "asked"}
-      :ok = WardrikEvents.append(MyApp.Events, {"agt_1", nil}, {"trigger.fired", "triggers/daily", data})
+      :ok = WardrikEvents.append(MyApp.Events, "agt_1", {"trigger.fired", "triggers/daily", data})
 
-  The event is `{type, subject, data}`, with a type from `WardrikProtocol`. It's handled like the
-  agent's own events: kept, sent to subscribers and folded into its activity.
+  `type` is a `WardrikProtocol` event type without its `wardrik.` prefix.
 
   ## Options
 
     * `:span` - the `WardrikCore.Span` the event happened in.
   """
-  @spec append(atom(), log(), {String.t(), String.t(), map()}, keyword()) :: :ok
-  def append(events, log, {type, subject, data}, opts \\ []) do
+  @spec append(atom(), agent(), {String.t(), String.t(), map()}, keyword()) :: :ok
+  def append(events, agent, {type, subject, data}, opts \\ []) do
+    log = logged(agent)
     settings = settings(events)
     time = DateTime.utc_now()
     span = Keyword.get(opts, :span)
@@ -133,9 +134,7 @@ defmodule WardrikEvents do
   end
 
   @doc """
-  Subscribes the calling process to the logs `resources` cover.
-
-  The process is sent `{WardrikEvents, log, event}` for each event, live or kept.
+  Subscribes the calling process to `resources`. It receives `{WardrikEvents, log, event}`.
   """
   @spec subscribe(atom(), resources()) :: :ok
   def subscribe(events, resources), do: Subscribers.subscribe(settings(events).group, resources)
@@ -145,25 +144,24 @@ defmodule WardrikEvents do
   def unsubscribe(events, resources),
     do: Subscribers.unsubscribe(settings(events).group, resources)
 
-  @doc "Returns the cursor at the end of the logs `resources` cover. Pass it as `:after` to read only newer events."
+  @doc "Returns the cursor after the last event. Pass it as `:after` to read only newer events."
   @spec head(atom(), resources()) :: String.t()
   def head(events, resources),
     do: settings(events).store |> Reader.head(resources) |> Cursor.encode()
 
   @doc """
-  Returns a page of kept events from the logs `resources` cover, oldest first.
+  Returns a page of kept events, oldest first.
 
       {:ok, %{events: events, next: next}} = WardrikEvents.page(MyApp.Events, ["agt_1"], limit: 100)
       {:ok, %{events: more}} = WardrikEvents.page(MyApp.Events, ["agt_1"], after: next)
 
-  `next` is the cursor after the page. Returns `{:error, :invalid_cursor}` if `:after` can't be
-  decoded.
-
-  If retention dropped events past the cursor, the page starts with a `wardrik.events.dropped`.
+    * `next` is the cursor after the page.
+    * Starts with a `wardrik.events.dropped` if retention dropped events after the cursor.
+    * Returns `{:error, :invalid_cursor}` for a bad `:after`.
 
   ## Options
 
-    * `:after` - the cursor to read after. The start of the logs unless set.
+    * `:after` - the cursor to read after. The start unless set.
     * `:limit` - the most events to return. `100` unless set, and never more than `500`.
   """
   @spec page(atom(), resources(), keyword()) ::
@@ -180,24 +178,22 @@ defmodule WardrikEvents do
   end
 
   @doc """
-  Streams the events of the logs `resources` cover, as `{event, cursor}`.
+  Streams `{event, cursor}`: kept events after `:after`, then new ones as they're written.
 
       {:ok, stream} = WardrikEvents.stream(MyApp.Events, [{"agt_1", "C1"}], after: saved)
 
       Enum.each(stream, fn {event, cursor} ->
-        show(event)
+        IO.puts(event["type"])
         save(WardrikEvents.Cursor.encode(cursor))
       end)
 
-  The stream reads back kept events, then follows new ones, live events too. It never skips an
-  event or repeats one between the two. It runs until the caller stops taking from it.
-
-  Returns `{:error, :invalid_cursor}` if `:after` can't be decoded.
+    * New events include live ones, like `wardrik.message.delta`.
+    * No event is skipped or repeated.
+    * Returns `{:error, :invalid_cursor}` for a bad `:after`.
 
   ## Options
 
-    * `:after` - the cursor to read after, as `WardrikEvents.Cursor.encode/1` returns it. Only
-      events written from now on unless set.
+    * `:after` - the cursor to read after. The next event written unless set.
     * `:types` - the event types to take, as `["wardrik.run.completed"]`. Every type unless set.
       A `wardrik.events.dropped` always comes through.
   """
@@ -211,31 +207,31 @@ defmodule WardrikEvents do
   end
 
   @doc """
-  Returns what the agent writing `log` is doing now, as the protocol's `activity`.
+  Returns what an agent is doing now. See `WardrikEvents.Activity`.
 
-      WardrikEvents.activity(MyApp.Events, {"agt_1", nil})
+      WardrikEvents.activity(MyApp.Events, "agt_1")
+      WardrikEvents.activity(MyApp.Events, {"agt_1", "C1"})
       #=> %{"doing" => [...], "since" => "2026-10-22T09:00:03.000000Z", "pending" => 1}
-
-  See `WardrikEvents.Activity`.
   """
-  @spec activity(atom(), log()) :: map()
-  def activity(events, log) do
-    case :ets.lookup(settings(events).heads, {:activity, log}) do
+  @spec activity(atom(), agent()) :: map()
+  def activity(events, agent) do
+    case :ets.lookup(settings(events).heads, {:activity, logged(agent)}) do
       [{_key, _version, activity}] -> activity
       [] -> Activity.init([])
     end
   end
 
   @doc """
-  Folds every event `log` keeps into `view`. Returns the view's state and the cursor after the last
-  event.
+  Folds a log's kept events into a `WardrikEvents.View`. Returns its state and the cursor after.
 
-      {timeline, cursor} = WardrikEvents.view(MyApp.Events, {"agt_1", nil}, WardrikEvents.Timeline)
+      {timeline, cursor} = WardrikEvents.view(MyApp.Events, "agt_1", WardrikEvents.Timeline)
 
-  `view` is a `WardrikEvents.View`. `opts` are passed to its `c:WardrikEvents.View.init/1`.
+  `opts` go to `c:WardrikEvents.View.init/1`.
   """
-  @spec view(atom(), log(), module(), keyword()) :: {term(), Cursor.t()}
-  def view(events, log, view, opts \\ []) do
+  @spec view(atom(), agent(), module(), keyword()) :: {term(), Cursor.t()}
+  def view(events, agent, view, opts \\ []) do
+    log = logged(agent)
+
     events
     |> settings()
     |> Reader.all(log)
@@ -243,18 +239,15 @@ defmodule WardrikEvents do
   end
 
   @doc """
-  Records a change someone made in the audit.
+  Writes `{type, subject, data}` to the audit, the log of who changed what.
 
       change = {"agent.forgotten", "agents/agt_1", %{"agent" => %{"id" => "agt_1"}}}
-      :ok = WardrikEvents.record(MyApp.Events, change, actor: principal)
-
-  `change` is `{type, subject, data}`. The audit is one log for the deployment, kept apart from the
-  agents' logs.
+      :ok = WardrikEvents.record(MyApp.Events, change, actor: %WardrikCore.Principal{id: "user_42"})
 
   ## Options
 
     * `:actor` - the `WardrikCore.Principal` who made the change.
-    * `:assumed_by` - the principals who acted for the actor, first to last. `[]` unless set.
+    * `:assumed_by` - the principals who acted for them, first to last. `[]` unless set.
     * `:span` - the `WardrikCore.Span` the change happened in.
   """
   @spec record(atom(), {String.t(), String.t(), map()}, keyword()) :: :ok | {:error, term()}
@@ -265,12 +258,10 @@ defmodule WardrikEvents do
   end
 
   @doc """
-  Returns a page of the audit, oldest first.
+  Returns a page of the audit, oldest first. `next` is the last change's sequence number.
 
       %{events: changes, next: next} = WardrikEvents.audit(MyApp.Events, limit: 100)
       %{events: more} = WardrikEvents.audit(MyApp.Events, after: next)
-
-  `next` is the sequence number of the last change returned.
 
   ## Options
 
@@ -284,7 +275,7 @@ defmodule WardrikEvents do
     %{events: changes, next: next}
   end
 
-  @doc "Drops the events and audit changes written before `cutoff`. Retention calls this hourly."
+  @doc "Drops events and audit changes written before `cutoff`. Runs hourly."
   @spec trim(atom(), DateTime.t()) :: :ok
   def trim(events, cutoff) do
     settings = settings(events)
@@ -377,6 +368,9 @@ defmodule WardrikEvents do
 
   defp after_cursor(nil), do: {:ok, %{}}
   defp after_cursor(text), do: Cursor.decode(text)
+
+  defp logged(agent) when is_binary(agent), do: {agent, nil}
+  defp logged({_agent, _conversation} = log), do: log
 
   defp stream_cursor(nil), do: {:ok, nil}
   defp stream_cursor(text), do: Cursor.decode(text)

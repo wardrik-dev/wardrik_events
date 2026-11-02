@@ -1,11 +1,11 @@
 defmodule WardrikEvents.Cursor do
   @moduledoc """
-  Encodes and decodes cursors. A cursor is the last sequence number read in each log.
+  Encodes and decodes cursors. A cursor maps each log to the last sequence number read.
 
       WardrikEvents.Cursor.encode(%{{"agt_1", nil} => 41, {"agt_1", "C1"} => 3})
   """
 
-  @typedoc "The last sequence number read, by log."
+  @typedoc "The last sequence number read in each log."
   @type t() :: %{WardrikEvents.log() => non_neg_integer()}
 
   @doc "Encodes a cursor as URL-safe text, for `:after`."
@@ -18,7 +18,7 @@ defmodule WardrikEvents.Cursor do
     |> Base.url_encode64(padding: false)
   end
 
-  @doc "Decodes text from `encode/1`. Returns `{:error, :invalid_cursor}` if it isn't a cursor."
+  @doc "Decodes text from `encode/1`, or returns `{:error, :invalid_cursor}`."
   @spec decode(String.t()) :: {:ok, t()} | {:error, :invalid_cursor}
   def decode(text) do
     with {:ok, json} <- Base.url_decode64(text, padding: false),
