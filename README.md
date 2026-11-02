@@ -26,7 +26,7 @@ children = [
 ]
 
 WardrikCore.start_agent(
-  agent_id: "acme/triage",
+  agent_id: "agt_1",
   model: "anthropic:claude-haiku-4-5",
   events: {WardrikEvents, MyApp.Events}
 )
@@ -46,16 +46,19 @@ Every function takes the name you gave. It raises if the events aren't started.
 
 ## What an agent writes
 
-Each agent writes one log, named by its id. Each event is a [CloudEvent](https://cloudevents.io)
-from [WardrikProtocol](https://hexdocs.pm/wardrik_protocol):
+Each agent writes one log, and each of its conversations one more: `{agent, conversation}`, with
+`conversation` `nil` for the agent's own. Each event is a [CloudEvent](https://cloudevents.io) from
+[WardrikProtocol](https://hexdocs.pm/wardrik_protocol):
 
 ```elixir
 %{
   "specversion" => "1.0",
   "id" => "019a0b6e-6f1c-7c3a-9d2e-4b1f8a2c5d70",
   "type" => "wardrik.run.started",
-  "source" => "wardrik://acme-prod/agents/acme/triage",
-  "subject" => "agents/acme/triage",
+  "source" => "wardrik://acme-prod/agents/agt_1",
+  "subject" => "agents/agt_1",
+  "agent" => "agt_1",
+  "conversation" => "C1",
   "time" => "2026-10-22T09:00:00.000000Z",
   "sequence" => "000000000007",
   "traceparent" => "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
@@ -63,6 +66,8 @@ from [WardrikProtocol](https://hexdocs.pm/wardrik_protocol):
 }
 ```
 
+* `agent` and `conversation` name the log. `conversation` is left out of the agent's own.
+* `source` holds the agent's ID URL-encoded.
 * `sequence` counts up in each log.
 * A run's events share its trace, so `traceparent` ties them together.
 
@@ -72,10 +77,14 @@ Some events are live: `message.delta`, `reasoning.delta`, `tool_call.progress` a
 
 ## Read a log back
 
-Name logs with patterns. `*` matches any run of characters, and `?` matches one:
+Name the logs to read:
+
+* `"agt_1"` - the agent's log and its conversations'.
+* `{"agt_1", "C1"}` - one log. `{"agt_1", nil}` is the agent's own.
+* `:all` - every log.
 
 ```elixir
-WardrikEvents.page(MyApp.Events, ["acme/*"], limit: 100)
+WardrikEvents.page(MyApp.Events, ["agt_1"], limit: 100)
 #=> {:ok,
 #=>  %{
 #=>    events: [
@@ -83,13 +92,13 @@ WardrikEvents.page(MyApp.Events, ["acme/*"], limit: 100)
 #=>      %{"type" => "wardrik.message.started", ...},
 #=>      ...
 #=>    ],
-#=>    next: "eyJhY21lL3RyaWFnZSI6NDN9"
+#=>    next: "W1siYWd0XzEiLG51bGwsNDNdLFsiYWd0XzEiLCJDMSIsNV1d"
 #=>  }}
 
-WardrikEvents.page(MyApp.Events, ["acme/*"], after: "eyJhY21lL3RyaWFnZSI6NDN9")
+WardrikEvents.page(MyApp.Events, ["agt_1"], after: "W1siYWd0XzEiLG51bGwsNDNdLFsiYWd0XzEiLCJDMSIsNV1d")
 ```
 
-* Events come oldest first, across every log matched.
+* Events come oldest first, across every log named.
 * `next` is a cursor. Pass it as `:after` to read on.
 * `head/2` returns the cursor at the end of the logs, to read only newer events.
 
@@ -99,7 +108,7 @@ get a `wardrik.events.dropped` first, saying how many you missed. Then reading c
 ## Follow it
 
 ```elixir
-{:ok, stream} = WardrikEvents.stream(MyApp.Events, ["acme/*"], after: cursor)
+{:ok, stream} = WardrikEvents.stream(MyApp.Events, [{"agt_1", "C1"}], after: cursor)
 
 Enum.each(stream, fn {event, cursor} ->
   show(event)
@@ -144,7 +153,7 @@ children = [{MyApp.Runs, events: MyApp.Events, types: ["wardrik.run.completed"]}
 | Option | Takes | Unless set |
 | --- | --- | --- |
 | `:events` | the name of your `WardrikEvents` | required |
-| `:resources` | patterns of the logs to follow | `["*"]`, every agent |
+| `:resources` | the logs to follow, as `stream/3` takes them | `:all` |
 | `:types` | the event types to take | every type |
 | `:after` | the cursor to start after, if you don't define `cursor/1` | what's written next |
 
@@ -154,7 +163,7 @@ listener restarts from what `cursor/1` returns. Drop a repeat by the event's `id
 ## What an agent is doing now
 
 ```elixir
-WardrikEvents.activity(MyApp.Events, "acme/triage")
+WardrikEvents.activity(MyApp.Events, {"agt_1", nil})
 #=> %{
 #=>   "doing" => [%{"type" => "wardrik.tool_call.started", "tool" => %{"name" => "github__search_issues", "call" => %{"id" => "call_1"}}}],
 #=>   "since" => "2026-10-22T09:00:03.000000Z",
@@ -174,7 +183,7 @@ A view folds a log, oldest first, into what a screen shows. `view/4` folds every
 returns the cursor after them:
 
 ```elixir
-{timeline, cursor} = WardrikEvents.view(MyApp.Events, "acme/triage", WardrikEvents.Timeline)
+{timeline, cursor} = WardrikEvents.view(MyApp.Events, {"agt_1", "C1"}, WardrikEvents.Timeline)
 WardrikEvents.Timeline.items(timeline)
 ```
 
@@ -189,12 +198,12 @@ Write your own view with the `WardrikEvents.View` behaviour.
 
 ## Write your own events
 
-A host can write what it does to an agent into the agent's log. The event is kept, sent to
+A host can write what it does to an agent into one of its logs. The event is kept, sent to
 subscribers and folded into the activity, like the agent's own. Its type comes from the protocol:
 
 ```elixir
 data = %{"trigger" => %{"name" => "daily"}, "status" => "asked"}
-:ok = WardrikEvents.append(MyApp.Events, "acme/digest", {"trigger.fired", "triggers/daily", data})
+:ok = WardrikEvents.append(MyApp.Events, {"agt_1", nil}, {"trigger.fired", "triggers/daily", data})
 ```
 
 ## The audit
@@ -202,7 +211,7 @@ data = %{"trigger" => %{"name" => "daily"}, "status" => "asked"}
 The audit is one log for the deployment. It records what people changed, and who changed it:
 
 ```elixir
-change = {"agent.forgotten", "agents/acme/triage", %{"agent" => %{"id" => "acme/triage"}}}
+change = {"agent.forgotten", "agents/agt_1", %{"agent" => %{"id" => "agt_1"}}}
 :ok = WardrikEvents.record(MyApp.Events, change, actor: principal)
 
 %{events: changes, next: next} = WardrikEvents.audit(MyApp.Events, limit: 100)

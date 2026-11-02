@@ -2,11 +2,11 @@ defmodule WardrikEvents.View do
   @moduledoc """
   The behaviour for views. A view folds an agent's events, oldest first, into what a screen shows.
 
-      {timeline, cursor} = WardrikEvents.view(MyApp.Events, "acme/triage", WardrikEvents.Timeline)
+      {timeline, cursor} = WardrikEvents.view(MyApp.Events, {"agt_1", nil}, WardrikEvents.Timeline)
 
   To keep a view current, stream the log after `cursor` and fold each event into the same state:
 
-      {:ok, stream} = WardrikEvents.stream(MyApp.Events, ["acme/triage"], after: WardrikEvents.Cursor.encode(cursor))
+      {:ok, stream} = WardrikEvents.stream(MyApp.Events, [{"agt_1", nil}], after: WardrikEvents.Cursor.encode(cursor))
 
       Enum.reduce(stream, timeline, fn {event, _cursor}, timeline ->
         WardrikEvents.Timeline.handle_event(event, timeline)

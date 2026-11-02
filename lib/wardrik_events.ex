@@ -8,16 +8,20 @@ defmodule WardrikEvents do
       ]
 
       WardrikCore.start_agent(
-        agent_id: "acme/triage",
+        agent_id: "agt_1",
         model: "anthropic:claude-haiku-4-5",
         events: {WardrikEvents, MyApp.Events}
       )
 
-      {:ok, stream} = WardrikEvents.stream(MyApp.Events, ["acme/*"])
+      {:ok, stream} = WardrikEvents.stream(MyApp.Events, ["agt_1"])
       Enum.each(stream, fn {event, cursor} -> save(event, WardrikEvents.Cursor.encode(cursor)) end)
 
-  Each agent writes one log, named by its id. Functions take logs as patterns, where `*` matches
-  any run of characters and `?` matches one. See `WardrikEvents.Pattern`.
+  Each agent writes one log, and each of its conversations one more: `{agent, conversation}`,
+  with `conversation` `nil` for the agent's own. Functions take the logs to read as resources:
+
+    * `"agt_1"` - the agent's log and its conversations'.
+    * `{"agt_1", "C1"}` - one log.
+    * `:all` - every log.
 
   Functions that take the events' name raise `ArgumentError` if they aren't started.
   """
@@ -39,6 +43,12 @@ defmodule WardrikEvents do
   alias WardrikEvents.Retention
   alias WardrikEvents.Subscribers
   alias WardrikEvents.Tail
+
+  @typedoc "One log: an agent's, or with `conversation`, one of its conversations'."
+  @type log() :: {agent :: String.t(), conversation :: String.t() | nil}
+
+  @typedoc "The logs to read: agents, each with its conversations, and single logs; or `:all`."
+  @type resources() :: [String.t() | log()] | :all
 
   @default_limit 100
   @max_limit 500
@@ -66,19 +76,33 @@ defmodule WardrikEvents do
   def handle_event(event, events) do
     settings = settings(events)
 
+    log = {event.metadata.agent_id, event.metadata[:conversation]}
+
     for cloud_event <- Encoder.encode(event, settings.deployment) do
-      publish(settings, event.metadata.agent_id, cloud_event)
-      changed(settings, event.metadata.agent_id, cloud_event, event.time, event.metadata[:span])
+      publish(settings, log, cloud_event)
+      changed(settings, log, cloud_event, event.time, event.metadata[:span])
     end
 
     :ok
   end
 
   @doc """
-  Writes an event into the log of the agent `agent_id`.
+  Returns whether `resource` covers `log`.
+
+      WardrikEvents.covers?("agt_1", {"agt_1", "C1"})
+      #=> true
+  """
+  @spec covers?(:all | String.t() | log(), log()) :: boolean()
+  def covers?(:all, _log), do: true
+  def covers?({_agent, _conversation} = log, log), do: true
+  def covers?(agent, {agent, _conversation}) when is_binary(agent), do: true
+  def covers?(_resource, _log), do: false
+
+  @doc """
+  Writes an event into `log`.
 
       data = %{"trigger" => %{"name" => "daily"}, "status" => "asked"}
-      :ok = WardrikEvents.append(MyApp.Events, "acme/triage", {"trigger.fired", "triggers/daily", data})
+      :ok = WardrikEvents.append(MyApp.Events, {"agt_1", nil}, {"trigger.fired", "triggers/daily", data})
 
   The event is `{type, subject, data}`, with a type from `WardrikProtocol`. It's handled like the
   agent's own events: kept, sent to subscribers and folded into its activity.
@@ -87,8 +111,8 @@ defmodule WardrikEvents do
 
     * `:span` - the `WardrikCore.Span` the event happened in.
   """
-  @spec append(atom(), String.t(), {String.t(), String.t(), map()}, keyword()) :: :ok
-  def append(events, agent_id, {type, subject, data}, opts \\ []) do
+  @spec append(atom(), log(), {String.t(), String.t(), map()}, keyword()) :: :ok
+  def append(events, log, {type, subject, data}, opts \\ []) do
     settings = settings(events)
     time = DateTime.utc_now()
     span = Keyword.get(opts, :span)
@@ -98,39 +122,39 @@ defmodule WardrikEvents do
         subject: subject,
         data: data,
         deployment: settings.deployment,
-        agent_id: agent_id,
+        log: log,
         time: time,
         span: span
       )
 
-    publish(settings, agent_id, cloud_event)
-    changed(settings, agent_id, cloud_event, time, span)
+    publish(settings, log, cloud_event)
+    changed(settings, log, cloud_event, time, span)
     :ok
   end
 
   @doc """
-  Subscribes the calling process to the logs `resources` match.
+  Subscribes the calling process to the logs `resources` cover.
 
   The process is sent `{WardrikEvents, log, event}` for each event, live or kept.
   """
-  @spec subscribe(atom(), [String.t()]) :: :ok
+  @spec subscribe(atom(), resources()) :: :ok
   def subscribe(events, resources), do: Subscribers.subscribe(settings(events).group, resources)
 
   @doc "Unsubscribes the calling process from `resources`."
-  @spec unsubscribe(atom(), [String.t()]) :: :ok
+  @spec unsubscribe(atom(), resources()) :: :ok
   def unsubscribe(events, resources),
     do: Subscribers.unsubscribe(settings(events).group, resources)
 
-  @doc "Returns the cursor at the end of the logs `resources` match. Pass it as `:after` to read only newer events."
-  @spec head(atom(), [String.t()]) :: String.t()
+  @doc "Returns the cursor at the end of the logs `resources` cover. Pass it as `:after` to read only newer events."
+  @spec head(atom(), resources()) :: String.t()
   def head(events, resources),
     do: settings(events).store |> Reader.head(resources) |> Cursor.encode()
 
   @doc """
-  Returns a page of kept events from the logs `resources` match, oldest first.
+  Returns a page of kept events from the logs `resources` cover, oldest first.
 
-      {:ok, %{events: events, next: next}} = WardrikEvents.page(MyApp.Events, ["acme/*"], limit: 100)
-      {:ok, %{events: more}} = WardrikEvents.page(MyApp.Events, ["acme/*"], after: next)
+      {:ok, %{events: events, next: next}} = WardrikEvents.page(MyApp.Events, ["agt_1"], limit: 100)
+      {:ok, %{events: more}} = WardrikEvents.page(MyApp.Events, ["agt_1"], after: next)
 
   `next` is the cursor after the page. Returns `{:error, :invalid_cursor}` if `:after` can't be
   decoded.
@@ -142,7 +166,7 @@ defmodule WardrikEvents do
     * `:after` - the cursor to read after. The start of the logs unless set.
     * `:limit` - the most events to return. `100` unless set, and never more than `500`.
   """
-  @spec page(atom(), [String.t()], keyword()) ::
+  @spec page(atom(), resources(), keyword()) ::
           {:ok, %{events: [map()], next: String.t()}} | {:error, :invalid_cursor}
   def page(events, resources, opts \\ []) do
     limit = opts |> Keyword.get(:limit, @default_limit) |> min(@max_limit)
@@ -156,9 +180,9 @@ defmodule WardrikEvents do
   end
 
   @doc """
-  Streams the events of the logs `resources` match, as `{event, cursor}`.
+  Streams the events of the logs `resources` cover, as `{event, cursor}`.
 
-      {:ok, stream} = WardrikEvents.stream(MyApp.Events, ["acme/*"], after: saved)
+      {:ok, stream} = WardrikEvents.stream(MyApp.Events, [{"agt_1", "C1"}], after: saved)
 
       Enum.each(stream, fn {event, cursor} ->
         show(event)
@@ -177,7 +201,7 @@ defmodule WardrikEvents do
     * `:types` - the event types to take, as `["wardrik.run.completed"]`. Every type unless set.
       A `wardrik.events.dropped` always comes through.
   """
-  @spec stream(atom(), [String.t()], keyword()) ::
+  @spec stream(atom(), resources(), keyword()) ::
           {:ok, Enumerable.t({map(), Cursor.t()})} | {:error, :invalid_cursor}
   def stream(events, resources, opts \\ []) do
     opts = Keyword.validate!(opts, [:after, types: :all])
@@ -189,12 +213,12 @@ defmodule WardrikEvents do
   @doc """
   Returns what the agent writing `log` is doing now, as the protocol's `activity`.
 
-      WardrikEvents.activity(MyApp.Events, "acme/triage")
+      WardrikEvents.activity(MyApp.Events, {"agt_1", nil})
       #=> %{"doing" => [...], "since" => "2026-10-22T09:00:03.000000Z", "pending" => 1}
 
   See `WardrikEvents.Activity`.
   """
-  @spec activity(atom(), String.t()) :: map()
+  @spec activity(atom(), log()) :: map()
   def activity(events, log) do
     case :ets.lookup(settings(events).heads, {:activity, log}) do
       [{_key, _version, activity}] -> activity
@@ -206,11 +230,11 @@ defmodule WardrikEvents do
   Folds every event `log` keeps into `view`. Returns the view's state and the cursor after the last
   event.
 
-      {timeline, cursor} = WardrikEvents.view(MyApp.Events, "acme/triage", WardrikEvents.Timeline)
+      {timeline, cursor} = WardrikEvents.view(MyApp.Events, {"agt_1", nil}, WardrikEvents.Timeline)
 
   `view` is a `WardrikEvents.View`. `opts` are passed to its `c:WardrikEvents.View.init/1`.
   """
-  @spec view(atom(), String.t(), module(), keyword()) :: {term(), Cursor.t()}
+  @spec view(atom(), log(), module(), keyword()) :: {term(), Cursor.t()}
   def view(events, log, view, opts \\ []) do
     events
     |> settings()
@@ -221,7 +245,7 @@ defmodule WardrikEvents do
   @doc """
   Records a change someone made in the audit.
 
-      change = {"agent.forgotten", "agents/acme/triage", %{"agent" => %{"id" => "acme/triage"}}}
+      change = {"agent.forgotten", "agents/agt_1", %{"agent" => %{"id" => "agt_1"}}}
       :ok = WardrikEvents.record(MyApp.Events, change, actor: principal)
 
   `change` is `{type, subject, data}`. The audit is one log for the deployment, kept apart from the
@@ -319,12 +343,12 @@ defmodule WardrikEvents do
     end
   end
 
-  defp activity_changed(settings, log, activity, time, span) do
+  defp activity_changed(settings, {agent, _conversation} = log, activity, time, span) do
     CloudEvent.new("activity.changed",
-      subject: "agents/" <> log,
+      subject: CloudEvent.subject(agent),
       data: %{"activity" => activity},
       deployment: settings.deployment,
-      agent_id: log,
+      log: log,
       time: time,
       span: span
     )
@@ -336,7 +360,9 @@ defmodule WardrikEvents do
         Subscribers.publish(settings.group, log, sequenced)
 
       {:error, reason} ->
-        Logger.error("Couldn't keep #{cloud_event["type"]} for #{log}: #{inspect(reason)}")
+        Logger.error(
+          "Couldn't keep #{cloud_event["type"]} for #{inspect(log)}: #{inspect(reason)}"
+        )
     end
   end
 

@@ -15,9 +15,12 @@ defmodule WardrikEvents.Tail do
   Streams `{event, cursor}` after the cursor `:after`, of the `:types` given or `:all`. With `nil`
   for `:after`, starts at what's written next.
 
-      WardrikEvents.Tail.stream(settings, ["acme/*"], after: nil, types: :all)
+      WardrikEvents.Tail.stream(settings, ["agt_1"], after: nil, types: :all)
   """
-  @spec stream(map(), [String.t()], after: Cursor.t() | nil, types: [String.t()] | :all) ::
+  @spec stream(map(), WardrikEvents.resources(),
+          after: Cursor.t() | nil,
+          types: [String.t()] | :all
+        ) ::
           Enumerable.t()
   def stream(settings, resources, args) do
     cursor = Keyword.fetch!(args, :after)

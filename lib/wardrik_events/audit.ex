@@ -10,7 +10,7 @@ defmodule WardrikEvents.Audit do
   alias WardrikEvents.Log
   alias WardrikEvents.Reader
 
-  @log "audit"
+  @log {"audit", nil}
 
   @doc "Writes `change`, a `{type, subject, data}`, with its `:actor` and `:assumed_by`."
   @spec record(map(), {String.t(), String.t(), map()}, keyword()) ::
@@ -48,7 +48,7 @@ defmodule WardrikEvents.Audit do
       store: settings.audit,
       deployment: settings.deployment,
       source: CloudEvent.audit_source(settings.deployment),
-      subject: @log
+      subject: "audit"
     }
   end
 

@@ -1,9 +1,10 @@
 defmodule WardrikEvents.Log do
   @moduledoc """
-  Reads and writes one log: an agent's kept events in a store, in order, each under its sequence
-  number.
+  Reads and writes one log: the kept events of an agent or one of its conversations, in a store,
+  in order, each under its sequence number.
 
-  An index lists every log.
+  An index lists every log. Each key holds the agent and conversation each URL-encoded, so no ID
+  is ever split.
   """
 
   alias WardrikEvents.CloudEvent
@@ -16,19 +17,19 @@ defmodule WardrikEvents.Log do
   Writes `event` at the log's next sequence number, counted in the table `:heads`. Returns the
   event with its `sequence`.
 
-      WardrikEvents.Log.append(store, "acme/triage", event, heads: heads)
+      WardrikEvents.Log.append(store, {"agt_1", nil}, event, heads: heads)
   """
-  @spec append(WardrikStore.t(), String.t(), CloudEvent.t(), heads: :ets.table()) ::
+  @spec append(WardrikStore.t(), WardrikEvents.log(), CloudEvent.t(), heads: :ets.table()) ::
           {:ok, CloudEvent.t()} | {:error, term()}
   def append(store, log, event, args),
     do: append(store, Keyword.fetch!(args, :heads), log, event, 1)
 
   @doc "Returns the sequence number of the log's last event. If every event was dropped, returns the last dropped one's."
-  @spec last(WardrikStore.t(), String.t()) :: non_neg_integer()
+  @spec last(WardrikStore.t(), WardrikEvents.log()) :: non_neg_integer()
   def last(store, log), do: gallop(store, log, oldest(store, log) - 1, 1)
 
   @doc "Returns the oldest sequence number the log holds. If it holds none, returns the next one it will write."
-  @spec oldest(WardrikStore.t(), String.t()) :: pos_integer()
+  @spec oldest(WardrikStore.t(), WardrikEvents.log()) :: pos_integer()
   def oldest(store, log) do
     case WardrikStore.get(store, index_key(log)) do
       %{"dropped" => dropped} -> dropped + 1
@@ -39,11 +40,14 @@ defmodule WardrikEvents.Log do
   @doc """
   Returns up to `:limit` events after the sequence number `:after`.
 
-      WardrikEvents.Log.read(store, "acme/triage", after: 0, limit: 100)
+      WardrikEvents.Log.read(store, {"agt_1", nil}, after: 0, limit: 100)
 
   Returns `{:dropped, oldest}` if retention dropped the next one.
   """
-  @spec read(WardrikStore.t(), String.t(), after: non_neg_integer(), limit: non_neg_integer()) ::
+  @spec read(WardrikStore.t(), WardrikEvents.log(),
+          after: non_neg_integer(),
+          limit: non_neg_integer()
+        ) ::
           {:ok, [CloudEvent.t()]} | {:dropped, pos_integer()}
   def read(store, log, args) do
     after_sequence = Keyword.fetch!(args, :after)
@@ -55,15 +59,20 @@ defmodule WardrikEvents.Log do
       else: {:ok, taken(store, log, after_sequence + 1, limit)}
   end
 
-  @doc "Returns the logs whose names start with `prefix`."
-  @spec logs(WardrikStore.t(), String.t()) :: [String.t()]
-  def logs(store, prefix \\ "") do
-    for key <- WardrikStore.keys(store, index_key(prefix)),
-        do: key |> String.replace_prefix(@index, "") |> URI.decode_www_form()
+  @doc "Returns every log, or the logs of the agent `agent`: its own and its conversations'."
+  @spec logs(WardrikStore.t(), String.t() | nil) :: [WardrikEvents.log()]
+  def logs(store, agent \\ nil)
+
+  def logs(store, nil), do: store |> WardrikStore.keys(@index) |> Enum.map(&log/1)
+
+  def logs(store, agent) do
+    for key <- WardrikStore.keys(store, @index <> encode(agent)),
+        {^agent, _conversation} = log <- [log(key)],
+        do: log
   end
 
   @doc "Drops the log's events written before `cutoff`."
-  @spec trim(WardrikStore.t(), String.t(), DateTime.t()) :: :ok | {:error, term()}
+  @spec trim(WardrikStore.t(), WardrikEvents.log(), DateTime.t()) :: :ok | {:error, term()}
   def trim(store, log, cutoff) do
     {dropped, vsn} = lookup_dropped(store, log)
 
@@ -183,7 +192,19 @@ defmodule WardrikEvents.Log do
   defp key(log, sequence),
     do: prefix(log) <> (sequence |> Integer.to_string() |> String.pad_leading(@digits, "0"))
 
-  defp index_key(log), do: @index <> URI.encode_www_form(log)
+  defp index_key(log), do: @index <> path(log)
 
-  defp prefix(log), do: "events/" <> URI.encode_www_form(log) <> "/"
+  defp prefix(log), do: "events/" <> path(log) <> "/"
+
+  defp path({agent, nil}), do: encode(agent)
+  defp path({agent, conversation}), do: encode(agent) <> "/" <> encode(conversation)
+
+  defp log(@index <> path) do
+    case path |> String.split("/") |> Enum.map(&URI.decode_www_form/1) do
+      [agent] -> {agent, nil}
+      [agent, conversation] -> {agent, conversation}
+    end
+  end
+
+  defp encode(id), do: URI.encode_www_form(id)
 end

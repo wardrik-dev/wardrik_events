@@ -2,7 +2,7 @@ defmodule WardrikEvents.Runs do
   @moduledoc """
   A view of an agent's runs, and the totals across them.
 
-      {runs, _cursor} = WardrikEvents.view(MyApp.Events, "acme/triage", WardrikEvents.Runs)
+      {runs, _cursor} = WardrikEvents.view(MyApp.Events, {"agt_1", nil}, WardrikEvents.Runs)
 
       WardrikEvents.Runs.runs(runs)
       #=> [%{id: "0af7...", status: :completed, model: "anthropic:claude-haiku-4-5", ...}]

@@ -21,18 +21,24 @@ defmodule WardrikEvents.Test.Events do
     :sys.get_state(retention)
   end
 
-  def emit(events, agent_id, name, metadata, time \\ DateTime.utc_now()) do
+  @doc "Emits a core event into `log`: an agent ID for the agent's own, or `{agent, conversation}`."
+  def emit(events, log, name, metadata, time \\ DateTime.utc_now()) do
+    {agent, conversation} = log(log)
+
     event = %Event{
       name: [:wardrik_core | name],
       time: time,
-      metadata: Map.put(metadata, :agent_id, agent_id)
+      metadata: Map.merge(metadata, %{agent_id: agent, conversation: conversation})
     }
 
     :ok = WardrikEvents.handle_event(event, events)
   end
 
-  def stopped(events, agent_id, time \\ DateTime.utc_now()),
-    do: emit(events, agent_id, [:agent, :stop], %{reason: :normal}, time)
+  def stopped(events, log, time \\ DateTime.utc_now()),
+    do: emit(events, log, [:agent, :stop], %{reason: :normal}, time)
+
+  defp log({_agent, _conversation} = log), do: log
+  defp log(agent), do: {agent, nil}
 
   def sequences(events, resources, opts \\ []) do
     {:ok, %{events: read}} = WardrikEvents.page(events, resources, opts)

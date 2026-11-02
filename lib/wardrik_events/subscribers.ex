@@ -1,25 +1,30 @@
 defmodule WardrikEvents.Subscribers do
-  @moduledoc "Sends each event, as it's written, to the processes subscribed to its log."
+  @moduledoc """
+  Sends each event, as it's written, to the processes subscribed to its log.
 
-  alias WardrikEvents.Pattern
+  Each agent's logs share one topic, named by the whole agent ID. Subscribers to `:all` share
+  another.
+  """
 
-  @doc "Subscribes the calling process to the logs `resources` match."
-  @spec subscribe(atom(), [String.t()]) :: :ok
+  @all "all"
+
+  @doc "Subscribes the calling process to `resources`. See `WardrikEvents.resources()`."
+  @spec subscribe(atom(), WardrikEvents.resources()) :: :ok
   def subscribe(group, resources) do
-    for {topic, patterns} <- by_topic(resources) do
-      :ok = Group.join(group, topic, %{patterns: Enum.uniq(held(group, topic) ++ patterns)})
+    for {topic, covered} <- by_topic(resources) do
+      :ok = Group.join(group, topic, %{covers: Enum.uniq(held(group, topic) ++ covered)})
     end
 
     :ok
   end
 
   @doc "Unsubscribes the calling process from `resources`."
-  @spec unsubscribe(atom(), [String.t()]) :: :ok
+  @spec unsubscribe(atom(), WardrikEvents.resources()) :: :ok
   def unsubscribe(group, resources) do
-    for {topic, patterns} <- by_topic(resources) do
-      case held(group, topic) -- patterns do
+    for {topic, covered} <- by_topic(resources) do
+      case held(group, topic) -- covered do
         [] -> Group.leave(group, topic)
-        held -> Group.join(group, topic, %{patterns: held})
+        held -> Group.join(group, topic, %{covers: held})
       end
     end
 
@@ -27,27 +32,33 @@ defmodule WardrikEvents.Subscribers do
   end
 
   @doc "Sends `event` to every process subscribed to `log`, as `{WardrikEvents, log, event}`."
-  @spec publish(atom(), String.t(), map()) :: :ok
-  def publish(group, log, event) do
+  @spec publish(atom(), WardrikEvents.log(), map()) :: :ok
+  def publish(group, {agent, _conversation} = log, event) do
     takers =
-      for topic <- Enum.uniq([topic(log), topic("*")]),
-          {pid, %{patterns: patterns}} <- Group.members(group, topic),
-          Enum.any?(patterns, &Pattern.covers?(&1, log)),
+      for topic <- [topic(agent), @all],
+          {pid, %{covers: covers}} <- Group.members(group, topic),
+          Enum.any?(covers, &WardrikEvents.covers?(&1, log)),
           uniq: true,
           do: pid
 
     Enum.each(takers, &send(&1, {WardrikEvents, log, event}))
   end
 
-  defp by_topic(resources), do: Enum.group_by(resources, &topic/1)
+  defp by_topic(:all), do: %{@all => [:all]}
+
+  defp by_topic(resources),
+    do: Enum.group_by(resources, &resource_topic/1)
+
+  defp resource_topic({agent, _conversation}), do: topic(agent)
+  defp resource_topic(agent), do: topic(agent)
 
   defp held(group, topic) do
     Enum.concat(
-      for {pid, %{patterns: patterns}} <- Group.local_members(group, topic),
+      for {pid, %{covers: covers}} <- Group.local_members(group, topic),
           pid == self(),
-          do: patterns
+          do: covers
     )
   end
 
-  defp topic(pattern), do: "org:" <> Pattern.org(pattern)
+  defp topic(agent), do: "agent:" <> URI.encode_www_form(agent)
 end

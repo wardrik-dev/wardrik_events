@@ -44,7 +44,7 @@ defmodule WardrikEvents.EncoderAgentTest do
 
     {:ok, agent} =
       WardrikCore.start_agent(:encoder_core,
-        agent_id: "acme/encoded-#{System.unique_integer([:positive])}",
+        agent_id: "agt_#{System.unique_integer([:positive])}",
         model: "anthropic:claude-haiku-4-5",
         capabilities: [WardrikEvents.Test.Echo],
         events: {WardrikEvents.Test.Sink, self()}

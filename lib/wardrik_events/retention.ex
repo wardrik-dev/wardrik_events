@@ -36,6 +36,6 @@ defmodule WardrikEvents.Retention do
 
   defp trim(store, log, cutoff) do
     with {:error, reason} <- Log.trim(store, log, cutoff),
-         do: Logger.warning("Couldn't trim #{log}'s events: #{inspect(reason)}")
+         do: Logger.warning("Couldn't trim #{inspect(log)}'s events: #{inspect(reason)}")
   end
 end

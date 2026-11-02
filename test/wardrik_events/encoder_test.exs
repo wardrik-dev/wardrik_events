@@ -50,7 +50,9 @@ defmodule WardrikEvents.EncoderTest do
     test "names the agent, a UUIDv7, the span and the one above it", %{step: step, turn: turn} do
       event = one(core([:step, :start], %{step: {:step, "summarize"}, span: step}))
 
-      assert event["source"] == "wardrik://local/agents/acme/triage"
+      assert event["source"] == "wardrik://local/agents/acme%2Ftriage"
+      assert event["agent"] == "acme/triage"
+      refute Map.has_key?(event, "conversation")
 
       assert event["id"] =~
                ~r/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
@@ -58,6 +60,14 @@ defmodule WardrikEvents.EncoderTest do
       assert event["traceparent"] == "00-#{turn.trace}-#{step.id}-01"
       assert event["parentspanid"] == turn.id
       assert event["dataschema"] == "urn:wardrik:schema:v1:step.started"
+    end
+
+    test "names the conversation of a conversation's event" do
+      event = one(core([:agent, :stop], %{reason: :normal, conversation: "C/1"}))
+
+      assert %{"agent" => "acme/triage", "conversation" => "C/1"} = event
+      assert event["source"] == "wardrik://local/agents/acme%2Ftriage"
+      refute Map.has_key?(event["data"], "conversation")
     end
 
     test "starts a trace of its own for an event outside a turn" do
@@ -83,6 +93,15 @@ defmodule WardrikEvents.EncoderTest do
                one(core([:agent, :start], %{state: :waiting}))
 
       assert %{"data" => %{"status" => "running"}} = one(core([:agent, :start], %{state: :due}))
+    end
+
+    test "says which conversation started, only for a conversation" do
+      assert %{"data" => data} = one(core([:agent, :start], %{state: :idle}))
+      assert data["agent"] == %{"id" => "acme/triage"}
+      refute Map.has_key?(data, "conversation")
+
+      assert %{"data" => %{"conversation" => %{"id" => "C1"}}} =
+               one(core([:agent, :start], %{state: :idle, conversation: "C1"}))
     end
 
     test "says who sent a message" do

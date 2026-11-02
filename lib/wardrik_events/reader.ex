@@ -1,38 +1,42 @@
 defmodule WardrikEvents.Reader do
-  @moduledoc "Reads kept events back from the logs patterns match."
+  @moduledoc "Reads kept events back from the logs resources cover."
 
   alias WardrikEvents.CloudEvent
   alias WardrikEvents.Cursor
   alias WardrikEvents.Log
-  alias WardrikEvents.Pattern
 
   @chunk 500
 
   @typedoc "`{log, sequence, event}`."
-  @type entry() :: {String.t(), non_neg_integer(), CloudEvent.t()}
+  @type entry() :: {WardrikEvents.log(), non_neg_integer(), CloudEvent.t()}
 
-  @doc "Returns the logs `resources` match."
-  @spec covered(WardrikStore.t(), [String.t()]) :: [String.t()]
+  @doc "Returns the kept logs `resources` cover."
+  @spec covered(WardrikStore.t(), WardrikEvents.resources()) :: [WardrikEvents.log()]
+  def covered(store, :all), do: Log.logs(store)
+
   def covered(store, resources) do
     resources
-    |> Enum.flat_map(fn pattern ->
-      store |> Log.logs(Pattern.literal(pattern)) |> Enum.filter(&Pattern.covers?(pattern, &1))
-    end)
+    |> Enum.flat_map(&logs(store, &1))
     |> Enum.uniq()
   end
 
-  @doc "Returns the cursor at the end of the logs `resources` match."
-  @spec head(WardrikStore.t(), [String.t()]) :: Cursor.t()
+  defp logs(store, {agent, _conversation} = log),
+    do: store |> Log.logs(agent) |> Enum.filter(&(&1 == log))
+
+  defp logs(store, agent), do: Log.logs(store, agent)
+
+  @doc "Returns the cursor at the end of the logs `resources` cover."
+  @spec head(WardrikStore.t(), WardrikEvents.resources()) :: Cursor.t()
   def head(store, resources),
     do: store |> covered(resources) |> Map.new(fn log -> {log, Log.last(store, log)} end)
 
   @doc """
-  Returns up to `:limit` entries after the cursor `:after` from the logs `resources` match, oldest
-  first, and the cursor after them.
+  Returns up to `:limit` entries after the cursor `:after` from the logs `resources` cover,
+  oldest first, and the cursor after them.
 
-      WardrikEvents.Reader.page(settings, ["acme/*"], after: %{}, limit: 100)
+      WardrikEvents.Reader.page(settings, ["agt_1"], after: %{}, limit: 100)
   """
-  @spec page(map(), [String.t()], after: Cursor.t(), limit: pos_integer()) ::
+  @spec page(map(), WardrikEvents.resources(), after: Cursor.t(), limit: pos_integer()) ::
           {[entry()], Cursor.t()}
   def page(settings, resources, args) do
     cursor = Keyword.fetch!(args, :after)
@@ -50,11 +54,12 @@ defmodule WardrikEvents.Reader do
   @doc """
   Returns up to `:limit` entries of `log` after the sequence number `:after`.
 
-      WardrikEvents.Reader.entries(settings, "acme/triage", after: 0, limit: 100)
+      WardrikEvents.Reader.entries(settings, {"agt_1", nil}, after: 0, limit: 100)
 
   If retention dropped the next one, the entries start with a `wardrik.events.dropped`.
   """
-  @spec entries(map(), String.t(), after: non_neg_integer(), limit: pos_integer()) :: [entry()]
+  @spec entries(map(), WardrikEvents.log(), after: non_neg_integer(), limit: pos_integer()) ::
+          [entry()]
   def entries(settings, log, args) do
     at = Keyword.fetch!(args, :after)
     limit = Keyword.fetch!(args, :limit)
@@ -70,7 +75,7 @@ defmodule WardrikEvents.Reader do
   end
 
   @doc "Streams every entry of `log`, oldest first."
-  @spec all(map(), String.t()) :: Enumerable.t(entry())
+  @spec all(map(), WardrikEvents.log()) :: Enumerable.t(entry())
   def all(settings, log) do
     0
     |> Stream.unfold(&chunk(settings, log, &1))
@@ -100,15 +105,20 @@ defmodule WardrikEvents.Reader do
   defp numbered(log, events),
     do: for(event <- events, do: {log, String.to_integer(event["sequence"]), event})
 
-  defp dropped(settings, log, at, oldest, events) do
-    CloudEvent.new("events.dropped",
-      subject: Map.get(settings, :subject, "agents/" <> log),
-      data: %{"after" => at, "oldest" => oldest},
-      agent_id: log,
-      source:
-        Map.get_lazy(settings, :source, fn -> CloudEvent.source(settings.deployment, log) end),
-      deployment: settings.deployment,
-      time: resumed_at(events)
+  defp dropped(settings, {agent, _conversation} = log, at, oldest, events) do
+    about =
+      case settings do
+        %{source: source, subject: subject} -> [source: source, subject: subject]
+        _agents -> [log: log, subject: CloudEvent.subject(agent)]
+      end
+
+    CloudEvent.new(
+      "events.dropped",
+      [
+        data: %{"after" => at, "oldest" => oldest},
+        deployment: settings.deployment,
+        time: resumed_at(events)
+      ] ++ about
     )
   end
 

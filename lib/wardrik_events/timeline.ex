@@ -3,7 +3,7 @@ defmodule WardrikEvents.Timeline do
   A view of an agent's conversation: each message people sent, and each run that answered, step
   by step.
 
-      {timeline, cursor} = WardrikEvents.view(MyApp.Events, "acme/triage", WardrikEvents.Timeline)
+      {timeline, cursor} = WardrikEvents.view(MyApp.Events, {"agt_1", nil}, WardrikEvents.Timeline)
       WardrikEvents.Timeline.items(timeline)
 
   ## Items

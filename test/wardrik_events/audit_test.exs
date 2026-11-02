@@ -17,21 +17,21 @@ defmodule WardrikEvents.AuditTest do
     assistant = %Principal{id: "acme/agent/helper"}
 
     assert :ok =
-             WardrikEvents.record(events, forgotten("acme/triage"),
+             WardrikEvents.record(events, forgotten("agt_1"),
                actor: actor,
                assumed_by: [assistant]
              )
 
-    assert :ok = WardrikEvents.record(events, forgotten("acme/digest"))
+    assert :ok = WardrikEvents.record(events, forgotten("agt_2"))
 
     assert %{events: [first, second], next: 2} = WardrikEvents.audit(events)
 
     assert %{
              "source" => "wardrik://test/audit",
-             "subject" => "agents/acme/triage",
+             "subject" => "agents/agt_1",
              "sequence" => "000000000001",
              "data" => %{
-               "agent" => %{"id" => "acme/triage"},
+               "agent" => %{"id" => "agt_1"},
                "actor" => %{"id" => "acme/@jon", "name" => "Jon"},
                "assumed_by" => [%{"id" => "acme/agent/helper"}]
              }
@@ -41,7 +41,8 @@ defmodule WardrikEvents.AuditTest do
   end
 
   test "pages through the changes", %{events: events} do
-    for agent <- ["a/1", "a/2", "a/3"], do: :ok = WardrikEvents.record(events, forgotten(agent))
+    for agent <- ["agt_1", "agt_2", "agt_3"],
+        do: :ok = WardrikEvents.record(events, forgotten(agent))
 
     assert %{events: [_, _], next: 2} = WardrikEvents.audit(events, limit: 2)
 
@@ -60,7 +61,7 @@ defmodule WardrikEvents.AuditTest do
   end
 
   test "says so when the changes asked for were trimmed", %{events: events} do
-    :ok = WardrikEvents.record(events, forgotten("a/1"))
+    :ok = WardrikEvents.record(events, forgotten("agt_1"))
     :ok = WardrikEvents.trim(events, DateTime.add(DateTime.utc_now(), 1, :day))
 
     assert %{events: [dropped], next: 1} = WardrikEvents.audit(events)
@@ -72,6 +73,6 @@ defmodule WardrikEvents.AuditTest do
   test "returns the store's refusal", %{events: events} do
     expect(WardrikStore, :put, fn _store, _key, _value, _opts -> {:error, :down} end)
 
-    assert {:error, :down} = WardrikEvents.record(events, forgotten("a/1"))
+    assert {:error, :down} = WardrikEvents.record(events, forgotten("agt_1"))
   end
 end

@@ -9,14 +9,14 @@ defmodule WardrikEvents.Encoder do
   alias WardrikEvents.CloudEvent
   alias WardrikEvents.Encoder.Value
 
-  @envelope [:agent_id, :span]
+  @envelope [:agent_id, :conversation, :span]
 
   @doc "Encodes `event` as CloudEvents for `deployment`. Returns `[]` for an event with no agent."
   @spec encode(Event.t(), String.t()) :: [CloudEvent.t()]
-  def encode(%Event{metadata: %{agent_id: agent_id}} = event, deployment) do
+  def encode(%Event{metadata: %{agent_id: agent_id} = metadata} = event, deployment) do
     opts = [
       deployment: deployment,
-      agent_id: agent_id,
+      log: {agent_id, metadata[:conversation]},
       time: event.time,
       span: event.metadata[:span]
     ]
@@ -41,19 +41,22 @@ defmodule WardrikEvents.Encoder do
 
   defp core([:agent, :start], %{metadata: metadata}) do
     [
-      {"agent.started", "agents/" <> metadata.agent_id,
-       %{
-         "agent" => %{"id" => metadata.agent_id},
-         "conversation" => %{"id" => metadata.agent_id},
-         "node" => Atom.to_string(node()),
-         "status" => agent_status(metadata.state)
-       }}
+      {"agent.started", CloudEvent.subject(metadata.agent_id),
+       Value.put(
+         %{
+           "agent" => %{"id" => metadata.agent_id},
+           "node" => Atom.to_string(node()),
+           "status" => agent_status(metadata.state)
+         },
+         "conversation",
+         metadata[:conversation] && %{"id" => metadata.conversation}
+       )}
     ]
   end
 
   defp core([:agent, :stop], %{metadata: metadata}),
     do: [
-      {"agent.stopped", "agents/" <> metadata.agent_id,
+      {"agent.stopped", CloudEvent.subject(metadata.agent_id),
        %{"agent" => %{"id" => metadata.agent_id}}}
     ]
 
@@ -139,7 +142,7 @@ defmodule WardrikEvents.Encoder do
 
   defp subagent(type, metadata, data),
     do:
-      {type, "agents/" <> metadata.agent_id,
+      {type, CloudEvent.subject(metadata.agent_id),
        Map.put(data, "agent", %{"name" => metadata.agent.name})}
 
   defp stopped(:ok, %{metadata: metadata}),
@@ -333,7 +336,7 @@ defmodule WardrikEvents.Encoder do
 
   defp subject(:tool_call, %{tool: %{call: %{id: id}}}), do: "tool_calls/" <> id
   defp subject(:interrupt, %{interrupt: %{id: id}}), do: "interrupts/" <> id
-  defp subject(_noun, %{agent_id: agent_id}), do: "agents/" <> agent_id
+  defp subject(_noun, %{agent_id: agent_id}), do: CloudEvent.subject(agent_id)
 
   defp about_message(type, span, data) do
     id = message_id(span)

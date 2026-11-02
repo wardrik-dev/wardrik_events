@@ -27,7 +27,8 @@ defmodule WardrikEvents.Listener do
   ## Options
 
     * `:events` - required. The name of your `WardrikEvents`.
-    * `:resources` - patterns of the logs to follow. `["*"]`, every agent, unless set.
+    * `:resources` - the logs to follow, as `WardrikEvents.stream/3` takes them. `:all`, every
+      agent's, unless set.
     * `:types` - the event types to take. Every type unless set. A `wardrik.events.dropped`
       always comes through.
     * `:after` - the cursor to start after, if you don't define `c:cursor/1`. What's written next
@@ -91,7 +92,7 @@ defmodule WardrikEvents.Listener do
     listener = %__MODULE__{events: Keyword.fetch!(opts, :events), cursor: nil, options: opts}
 
     {:ok, stream} =
-      WardrikEvents.stream(listener.events, Keyword.get(opts, :resources, ["*"]),
+      WardrikEvents.stream(listener.events, Keyword.get(opts, :resources, :all),
         after: module.cursor(listener),
         types: Keyword.get(opts, :types, :all)
       )

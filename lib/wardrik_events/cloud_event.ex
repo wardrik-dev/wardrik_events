@@ -16,7 +16,7 @@ defmodule WardrikEvents.CloudEvent do
         subject: "runs/0af7...",
         data: data,
         deployment: "acme-prod",
-        agent_id: "acme/triage",
+        log: {"agt_1", nil},
         time: DateTime.utc_now()
       )
 
@@ -28,7 +28,8 @@ defmodule WardrikEvents.CloudEvent do
     * `:data` - required. The payload.
     * `:time` - required. When it happened.
     * `:deployment` - the deployment's name. Required unless `:source` is set.
-    * `:agent_id` - the agent the event is about. Required unless `:source` is set.
+    * `:log` - the log the event is in, as `{agent, conversation}`. It sets the `agent` and
+      `conversation` extensions. Required unless `:source` is set.
     * `:source` - the event's `source`, for an event that isn't an agent's.
     * `:span` - the `WardrikCore.Span` it happened in. A new root span unless set.
   """
@@ -50,6 +51,7 @@ defmodule WardrikEvents.CloudEvent do
       "data" => Keyword.fetch!(opts, :data)
     }
     |> put_present("parentspanid", span.parent)
+    |> logged(opts[:log])
   end
 
   @doc "Puts the event's place in its log as the `sequence` extension, padded to 12 digits."
@@ -57,16 +59,28 @@ defmodule WardrikEvents.CloudEvent do
   def sequenced(event, sequence),
     do: Map.put(event, "sequence", sequence |> Integer.to_string() |> String.pad_leading(12, "0"))
 
-  @doc "Returns the `source` of an agent's events."
+  @doc "Returns the `source` of an agent's events. The agent's ID is URL-encoded."
   @spec source(String.t(), String.t()) :: String.t()
-  def source(deployment, agent_id), do: "wardrik://#{deployment}/agents/#{agent_id}"
+  def source(deployment, agent),
+    do: "wardrik://#{deployment}/agents/" <> URI.encode(agent, &URI.char_unreserved?/1)
+
+  @doc "Returns the `subject` of an event about the agent `agent`. Its ID is URL-encoded."
+  @spec subject(String.t()) :: String.t()
+  def subject(agent), do: "agents/" <> URI.encode(agent, &URI.char_unreserved?/1)
 
   @doc "Returns the `source` of the audit's changes."
   @spec audit_source(String.t()) :: String.t()
   def audit_source(deployment), do: "wardrik://#{deployment}/audit"
 
-  defp agent_source(opts),
-    do: source(Keyword.fetch!(opts, :deployment), Keyword.fetch!(opts, :agent_id))
+  defp agent_source(opts) do
+    {agent, _conversation} = Keyword.fetch!(opts, :log)
+    source(Keyword.fetch!(opts, :deployment), agent)
+  end
+
+  defp logged(event, nil), do: event
+
+  defp logged(event, {agent, conversation}),
+    do: event |> Map.put("agent", agent) |> put_present("conversation", conversation)
 
   @doc "Returns the trace id in the event's `traceparent`, which is its run's id. Returns `nil` if there's none."
   @spec trace_id(t()) :: String.t() | nil
