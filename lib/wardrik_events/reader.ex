@@ -26,31 +26,45 @@ defmodule WardrikEvents.Reader do
   def head(store, resources),
     do: store |> covered(resources) |> Map.new(fn log -> {log, Log.last(store, log)} end)
 
-  @doc "Returns up to `limit` entries after `cursor` from the logs `resources` match, oldest first, and the cursor after them."
-  @spec page(map(), [String.t()], Cursor.t(), pos_integer()) :: {[entry()], Cursor.t()}
-  def page(settings, resources, cursor, limit) do
+  @doc """
+  Returns up to `:limit` entries after the cursor `:after` from the logs `resources` match, oldest
+  first, and the cursor after them.
+
+      WardrikEvents.Reader.page(settings, ["acme/*"], after: %{}, limit: 100)
+  """
+  @spec page(map(), [String.t()], after: Cursor.t(), limit: pos_integer()) ::
+          {[entry()], Cursor.t()}
+  def page(settings, resources, args) do
+    cursor = Keyword.fetch!(args, :after)
+    limit = Keyword.fetch!(args, :limit)
+
     read =
       settings.store
       |> covered(resources)
-      |> Enum.map(fn log -> entries(settings, log, Map.get(cursor, log, 0), limit) end)
+      |> Enum.map(&entries(settings, &1, after: Map.get(cursor, &1, 0), limit: limit))
       |> merged(limit)
 
     {read, advanced(cursor, read)}
   end
 
   @doc """
-  Returns up to `limit` entries of `log` after the sequence number `at`.
+  Returns up to `:limit` entries of `log` after the sequence number `:after`.
+
+      WardrikEvents.Reader.entries(settings, "acme/triage", after: 0, limit: 100)
 
   If retention dropped the next one, the entries start with a `wardrik.events.dropped`.
   """
-  @spec entries(map(), String.t(), non_neg_integer(), pos_integer()) :: [entry()]
-  def entries(settings, log, at, limit) do
-    case Log.read(settings.store, log, at, limit) do
+  @spec entries(map(), String.t(), after: non_neg_integer(), limit: pos_integer()) :: [entry()]
+  def entries(settings, log, args) do
+    at = Keyword.fetch!(args, :after)
+    limit = Keyword.fetch!(args, :limit)
+
+    case Log.read(settings.store, log, after: at, limit: limit) do
       {:ok, events} ->
         numbered(log, events)
 
       {:dropped, oldest} ->
-        {:ok, events} = Log.read(settings.store, log, oldest - 1, limit - 1)
+        {:ok, events} = Log.read(settings.store, log, after: oldest - 1, limit: limit - 1)
         [{log, oldest - 1, dropped(settings, log, at, oldest, events)} | numbered(log, events)]
     end
   end
@@ -72,7 +86,7 @@ defmodule WardrikEvents.Reader do
   end
 
   defp chunk(settings, log, at) do
-    case entries(settings, log, at, @chunk) do
+    case entries(settings, log, after: at, limit: @chunk) do
       [] -> nil
       entries -> {entries, last_sequence(entries)}
     end
@@ -87,10 +101,9 @@ defmodule WardrikEvents.Reader do
     do: for(event <- events, do: {log, String.to_integer(event["sequence"]), event})
 
   defp dropped(settings, log, at, oldest, events) do
-    CloudEvent.new(
-      "events.dropped",
-      Map.get(settings, :subject, "agents/" <> log),
-      %{"after" => at, "oldest" => oldest},
+    CloudEvent.new("events.dropped",
+      subject: Map.get(settings, :subject, "agents/" <> log),
+      data: %{"after" => at, "oldest" => oldest},
       agent_id: log,
       source:
         Map.get_lazy(settings, :source, fn -> CloudEvent.source(settings.deployment, log) end),

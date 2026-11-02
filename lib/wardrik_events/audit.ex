@@ -22,14 +22,16 @@ defmodule WardrikEvents.Audit do
       |> Value.put("assumed_by", assumed_by(opts[:assumed_by]))
 
     event =
-      CloudEvent.new(type, subject, data,
+      CloudEvent.new(type,
+        subject: subject,
+        data: data,
         source: CloudEvent.audit_source(settings.deployment),
         deployment: settings.deployment,
         time: DateTime.utc_now(),
         span: opts[:span]
       )
 
-    Log.append(settings.audit, settings.heads, @log, event)
+    Log.append(settings.audit, @log, event, heads: settings.heads)
   end
 
   @doc "Returns up to `limit` changes after the sequence number `at`, and the sequence number of the last one."
@@ -37,7 +39,7 @@ defmodule WardrikEvents.Audit do
   def page(settings, at, limit) do
     settings
     |> reading()
-    |> Reader.entries(@log, at, limit)
+    |> Reader.entries(@log, after: at, limit: limit)
     |> Enum.map_reduce(at, fn {_log, sequence, event}, _at -> {event, sequence} end)
   end
 

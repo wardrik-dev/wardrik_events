@@ -10,9 +10,11 @@ defmodule WardrikEvents.CloudEvent do
   @type t() :: %{String.t() => term()}
 
   @doc """
-  Builds an event of `type` about `subject`.
+  Builds an event of `type` about `:subject`, with `:data` as its payload.
 
-      WardrikEvents.CloudEvent.new("run.started", "runs/0af7...", data,
+      WardrikEvents.CloudEvent.new("run.started",
+        subject: "runs/0af7...",
+        data: data,
         deployment: "acme-prod",
         agent_id: "acme/triage",
         time: DateTime.utc_now()
@@ -22,14 +24,16 @@ defmodule WardrikEvents.CloudEvent do
 
   ## Options
 
+    * `:subject` - required. What the event is about.
+    * `:data` - required. The payload.
     * `:time` - required. When it happened.
     * `:deployment` - the deployment's name. Required unless `:source` is set.
     * `:agent_id` - the agent the event is about. Required unless `:source` is set.
     * `:source` - the event's `source`, for an event that isn't an agent's.
     * `:span` - the `WardrikCore.Span` it happened in. A new root span unless set.
   """
-  @spec new(String.t(), String.t(), map(), keyword()) :: t()
-  def new(type, subject, data, opts) do
+  @spec new(String.t(), keyword()) :: t()
+  def new(type, opts) do
     span = opts[:span] || Span.root()
     time = Keyword.fetch!(opts, :time)
 
@@ -38,12 +42,12 @@ defmodule WardrikEvents.CloudEvent do
       "id" => uuid_v7(time),
       "source" => Keyword.get_lazy(opts, :source, fn -> agent_source(opts) end),
       "type" => "wardrik." <> type,
-      "subject" => subject,
+      "subject" => Keyword.fetch!(opts, :subject),
       "time" => DateTime.to_iso8601(time),
       "datacontenttype" => "application/json",
       "dataschema" => WardrikProtocol.dataschema("wardrik." <> type),
       "traceparent" => Span.traceparent(span),
-      "data" => data
+      "data" => Keyword.fetch!(opts, :data)
     }
     |> put_present("parentspanid", span.parent)
   end

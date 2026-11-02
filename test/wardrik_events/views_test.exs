@@ -317,12 +317,12 @@ defmodule WardrikEvents.ViewsTest do
 
     test "applies again when another update came in between", %{table: table} do
       interleaved = fn count ->
-        if count == 0, do: Heads.update(table, :key, 0, &(&1 + 10))
+        if count == 0, do: Heads.update(table, :key, initial: 0, with: &(&1 + 10))
         count + 1
       end
 
-      assert Heads.update(table, :key, 0, interleaved) == {10, 11}
-      assert Heads.update(table, :key, 0, &(&1 * 2)) == {11, 22}
+      assert Heads.update(table, :key, initial: 0, with: interleaved) == {10, 11}
+      assert Heads.update(table, :key, initial: 0, with: &(&1 * 2)) == {11, 22}
     end
   end
 end

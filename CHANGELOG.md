@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0-rc.2
+
+### Breaking
+
+- `WardrikEvents.CloudEvent.new/2`, `Heads.update/3`, `Log.append/4`, `Log.read/3`,
+  `Reader.entries/3`, `Reader.page/3` and `Tail.stream/3` take their arguments by name, as
+  `subject:`, `data:`, `initial:`, `with:`, `heads:`, `after:`, `limit:` and `types:`.
+
 ## 0.1.0-rc.1 (2026-10-30)
 
 - Each WardrikCore agent's events, encoded as the CloudEvents of WardrikProtocol, and kept in one

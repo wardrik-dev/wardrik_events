@@ -12,10 +12,16 @@ defmodule WardrikEvents.Log do
   @index "logs/"
   @batch 100
 
-  @doc "Writes `event` at the log's next sequence number. Returns the event with its `sequence`."
-  @spec append(WardrikStore.t(), :ets.table(), String.t(), CloudEvent.t()) ::
+  @doc """
+  Writes `event` at the log's next sequence number, counted in the table `:heads`. Returns the
+  event with its `sequence`.
+
+      WardrikEvents.Log.append(store, "acme/triage", event, heads: heads)
+  """
+  @spec append(WardrikStore.t(), String.t(), CloudEvent.t(), heads: :ets.table()) ::
           {:ok, CloudEvent.t()} | {:error, term()}
-  def append(store, heads, log, event), do: append(store, heads, log, event, 1)
+  def append(store, log, event, args),
+    do: append(store, Keyword.fetch!(args, :heads), log, event, 1)
 
   @doc "Returns the sequence number of the log's last event. If every event was dropped, returns the last dropped one's."
   @spec last(WardrikStore.t(), String.t()) :: non_neg_integer()
@@ -31,13 +37,17 @@ defmodule WardrikEvents.Log do
   end
 
   @doc """
-  Returns up to `limit` events after the sequence number `after_sequence`.
+  Returns up to `:limit` events after the sequence number `:after`.
+
+      WardrikEvents.Log.read(store, "acme/triage", after: 0, limit: 100)
 
   Returns `{:dropped, oldest}` if retention dropped the next one.
   """
-  @spec read(WardrikStore.t(), String.t(), non_neg_integer(), non_neg_integer()) ::
+  @spec read(WardrikStore.t(), String.t(), after: non_neg_integer(), limit: non_neg_integer()) ::
           {:ok, [CloudEvent.t()]} | {:dropped, pos_integer()}
-  def read(store, log, after_sequence, limit) do
+  def read(store, log, args) do
+    after_sequence = Keyword.fetch!(args, :after)
+    limit = Keyword.fetch!(args, :limit)
     oldest = oldest(store, log)
 
     if after_sequence + 1 < oldest,

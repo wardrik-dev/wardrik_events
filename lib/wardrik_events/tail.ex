@@ -11,9 +11,18 @@ defmodule WardrikEvents.Tail do
 
   @page 500
 
-  @doc "Streams `{event, cursor}` after `cursor`. With `nil`, starts at what's written next."
-  @spec stream(map(), [String.t()], Cursor.t() | nil, [String.t()] | :all) :: Enumerable.t()
-  def stream(settings, resources, cursor, types) do
+  @doc """
+  Streams `{event, cursor}` after the cursor `:after`, of the `:types` given or `:all`. With `nil`
+  for `:after`, starts at what's written next.
+
+      WardrikEvents.Tail.stream(settings, ["acme/*"], after: nil, types: :all)
+  """
+  @spec stream(map(), [String.t()], after: Cursor.t() | nil, types: [String.t()] | :all) ::
+          Enumerable.t()
+  def stream(settings, resources, args) do
+    cursor = Keyword.fetch!(args, :after)
+    types = Keyword.fetch!(args, :types)
+
     fn -> open(settings, resources, cursor) end
     |> Stream.resource(&next/1, &close/1)
     |> Stream.filter(fn {event, _cursor} -> takes?(types, event["type"]) end)
@@ -64,7 +73,7 @@ defmodule WardrikEvents.Tail do
 
   defp read(tail, log) do
     tail.settings
-    |> Reader.entries(log, Map.get(tail.positions, log, 0), @page)
+    |> Reader.entries(log, after: Map.get(tail.positions, log, 0), limit: @page)
     |> Enum.map_reduce(tail, &passed/2)
   end
 

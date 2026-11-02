@@ -23,7 +23,9 @@ defmodule WardrikEvents.Encoder do
 
     event
     |> described()
-    |> Enum.map(fn {type, subject, data} -> CloudEvent.new(type, subject, data, opts) end)
+    |> Enum.map(fn {type, subject, data} ->
+      CloudEvent.new(type, [subject: subject, data: data] ++ opts)
+    end)
   end
 
   def encode(%Event{}, _deployment), do: []

@@ -17,19 +17,24 @@ defmodule WardrikEvents.Heads do
   end
 
   @doc """
-  Updates the value under `key` with `fun`. Returns `{before, after}`.
+  Updates the value under `key` with the function `:with`. Returns `{before, after}`.
 
-  `fun` gets `initial` if `key` has no value. If another process updates `key` first, `fun` runs
+      WardrikEvents.Heads.update(heads, :count, initial: 0, with: &(&1 + 1))
+
+  `:with` gets `:initial` if `key` has no value. If another process updates `key` first, it runs
   again on the new value.
   """
-  @spec update(atom(), term(), term(), (term() -> term())) :: {term(), term()}
-  def update(heads, key, initial, fun) do
+  @spec update(atom(), term(), initial: term(), with: (term() -> term())) :: {term(), term()}
+  def update(heads, key, args),
+    do: updated(heads, key, Keyword.fetch!(args, :initial), Keyword.fetch!(args, :with))
+
+  defp updated(heads, key, initial, fun) do
     {version, value} = current(heads, key, initial)
     updated = fun.(value)
 
     if swapped?(heads, key, version, updated),
       do: {value, updated},
-      else: update(heads, key, initial, fun)
+      else: updated(heads, key, initial, fun)
   end
 
   defp current(heads, key, initial) do

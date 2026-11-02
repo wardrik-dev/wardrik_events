@@ -94,7 +94,9 @@ defmodule WardrikEvents do
     span = Keyword.get(opts, :span)
 
     cloud_event =
-      CloudEvent.new(type, subject, data,
+      CloudEvent.new(type,
+        subject: subject,
+        data: data,
         deployment: settings.deployment,
         agent_id: agent_id,
         time: time,
@@ -146,7 +148,7 @@ defmodule WardrikEvents do
     limit = opts |> Keyword.get(:limit, @default_limit) |> min(@max_limit)
 
     with {:ok, cursor} <- after_cursor(opts[:after]) do
-      {read, next} = Reader.page(settings(events), resources, cursor, limit)
+      {read, next} = Reader.page(settings(events), resources, after: cursor, limit: limit)
 
       {:ok,
        %{events: for({_log, _sequence, event} <- read, do: event), next: Cursor.encode(next)}}
@@ -181,7 +183,7 @@ defmodule WardrikEvents do
     opts = Keyword.validate!(opts, [:after, types: :all])
 
     with {:ok, cursor} <- stream_cursor(opts[:after]),
-         do: {:ok, Tail.stream(settings(events), resources, cursor, opts[:types])}
+         do: {:ok, Tail.stream(settings(events), resources, after: cursor, types: opts[:types])}
   end
 
   @doc """
@@ -304,7 +306,7 @@ defmodule WardrikEvents do
   defp changed(settings, log, cloud_event, time, span) do
     fold = &Activity.handle_event(cloud_event, &1)
 
-    case Heads.update(settings.heads, {:activity, log}, Activity.init([]), fold) do
+    case Heads.update(settings.heads, {:activity, log}, initial: Activity.init([]), with: fold) do
       {same, same} ->
         :ok
 
@@ -318,10 +320,9 @@ defmodule WardrikEvents do
   end
 
   defp activity_changed(settings, log, activity, time, span) do
-    CloudEvent.new(
-      "activity.changed",
-      "agents/" <> log,
-      %{"activity" => activity},
+    CloudEvent.new("activity.changed",
+      subject: "agents/" <> log,
+      data: %{"activity" => activity},
       deployment: settings.deployment,
       agent_id: log,
       time: time,
@@ -330,7 +331,7 @@ defmodule WardrikEvents do
   end
 
   defp kept(settings, log, cloud_event) do
-    case Log.append(settings.store, settings.heads, log, cloud_event) do
+    case Log.append(settings.store, log, cloud_event, heads: settings.heads) do
       {:ok, sequenced} ->
         Subscribers.publish(settings.group, log, sequenced)
 
