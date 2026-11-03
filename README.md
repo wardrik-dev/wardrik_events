@@ -68,6 +68,32 @@ end)
 * It also carries live events, like `wardrik.message.delta`. These are never kept.
 * No event is missed or repeated between reading back and following.
 
+## Follow it from your app
+
+```elixir
+defmodule MyApp.Runs do
+  use WardrikEvents.Listener
+
+  @impl true
+  def handle(event, listener) do
+    MyApp.Repo.transaction(fn ->
+      MyApp.Repo.insert_all("agent_runs", [MyApp.Runs.row(event)], on_conflict: :nothing)
+      MyApp.Cursors.put!("runs", listener.cursor)
+    end)
+
+    :ok
+  end
+
+  @impl true
+  def cursor(_listener), do: MyApp.Cursors.get("runs")
+end
+
+children = [{MyApp.Runs, events: MyApp.Events, resources: ["agt_1"], types: ["wardrik.run.completed"]}]
+```
+
+* Save `listener.cursor` with your work. After a restart, the listener reads on from `cursor/1`.
+* Each event arrives at least once. Drop repeats by the event's `id`.
+
 ## Send every event on
 
 ```elixir

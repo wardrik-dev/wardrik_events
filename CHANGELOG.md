@@ -6,8 +6,8 @@
 
 - `page/3`, `head/2` and `stream/3` read only the agents and logs named. `:all` is gone from them;
   `subscribe/2` still takes it, for every agent's events as they happen.
-- `WardrikEvents.Listener` is gone. Follow named agents with `stream/3`, or ship every event with a
-  sink.
+- `WardrikEvents.Listener` takes `:resources`, required: it follows named agents only. To take
+  every agent's events, give the events a sink.
 
 ### Added
 
