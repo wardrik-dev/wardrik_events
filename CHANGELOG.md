@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Views
+
+- `Timeline` folds what a delegate says and does into a `:subagent` step of its own, never into
+  the run's answer, and counts its cost toward the run.
+- `Timeline.touched/1` returns `:reset` where the conversation was cleared.
+- `Timeline.item/2`, `current_run/1`, `running?/1` and `interrupts/1`.
+- `Runs` keeps each run's events with `events: true`. `Runs.sum/1` adds totals up.
+- `CloudEvent.span_id/1`.
+
 ### Breaking
 
 - `page/3`, `head/2` and `stream/3` read only the agents and logs named. `:all` is gone from them;

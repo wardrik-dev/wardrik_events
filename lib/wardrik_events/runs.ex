@@ -11,15 +11,21 @@ defmodule WardrikEvents.Runs do
       #=> %{runs: 12, failed: 1, tool_calls: 40, input_tokens: 51_200, output_tokens: 8_300, cost_micro_usd: 91_000, last_at: "..."}
 
   A run's tool calls, tokens and cost include its subagents'. See `t:run/0`.
+
+  ## Options
+
+    * `:events` - `true` to keep each run's events, oldest first, as its `:events`. `false` unless
+      set.
   """
 
   @behaviour WardrikEvents.View
 
   alias WardrikEvents.CloudEvent
 
-  defstruct runs: %{}, order: [], senders: %{}
+  defstruct runs: %{}, order: [], senders: %{}, events?: false
 
   @type run() :: %{
+          optional(:events) => [CloudEvent.t()],
           id: String.t(),
           status: :running | :completed | :failed | :cancelled | :waiting,
           started_at: String.t(),
@@ -34,7 +40,12 @@ defmodule WardrikEvents.Runs do
           error: String.t() | nil
         }
 
-  @type t() :: %__MODULE__{runs: %{String.t() => run()}, order: [String.t()], senders: map()}
+  @type t() :: %__MODULE__{
+          runs: %{String.t() => run()},
+          order: [String.t()],
+          senders: map(),
+          events?: boolean()
+        }
 
   @ended %{
     "wardrik.run.completed" => :completed,
@@ -46,7 +57,7 @@ defmodule WardrikEvents.Runs do
   @summed [:tool_calls, :input_tokens, :output_tokens, :cost_micro_usd]
 
   @impl WardrikEvents.View
-  def init(_opts), do: %__MODULE__{}
+  def init(opts), do: %__MODULE__{events?: Keyword.get(opts, :events, false)}
 
   @impl WardrikEvents.View
   def handle_event(%{"type" => "wardrik.message.created", "data" => data}, runs) do
@@ -56,14 +67,18 @@ defmodule WardrikEvents.Runs do
 
   def handle_event(%{"type" => "wardrik.run.started", "data" => data} = event, runs) do
     id = data["run"]["id"]
-    run = started(id, event, source(runs, data["run"]))
+    run = id |> started(event, source(runs, data["run"])) |> kept(runs, event)
     %{runs | runs: Map.put(runs.runs, id, run), order: [id | runs.order]}
   end
 
   def handle_event(%{"type" => type, "data" => data} = event, runs) do
     case Map.fetch(runs.runs, CloudEvent.trace_id(event) || "") do
-      {:ok, run} -> %{runs | runs: Map.put(runs.runs, run.id, step(run, type, data, event))}
-      :error -> runs
+      {:ok, run} ->
+        run = run |> kept(runs, event) |> step(type, data, event)
+        %{runs | runs: Map.put(runs.runs, run.id, run)}
+
+      :error ->
+        runs
     end
   end
 
@@ -90,6 +105,18 @@ defmodule WardrikEvents.Runs do
       failed: Enum.count(runs, &(&1.status == :failed)),
       last_at: last_at(runs)
     })
+  end
+
+  @doc "Adds up `totals/1`s, such as an agent's own and its conversations'."
+  @spec sum([map()]) :: map()
+  def sum(totals) do
+    sums =
+      for key <- [:runs, :failed | @summed],
+          into: %{},
+          do: {key, Enum.sum_by(totals, &Map.fetch!(&1, key))}
+
+    last = totals |> Enum.map(& &1.last_at) |> Enum.reject(&is_nil/1) |> Enum.max(fn -> nil end)
+    Map.put(sums, :last_at, last)
   end
 
   @doc "Returns how long `run` took in milliseconds, or `nil` while it runs."
@@ -121,6 +148,11 @@ defmodule WardrikEvents.Runs do
       error: nil
     }
   end
+
+  defp kept(run, %__MODULE__{events?: true}, event),
+    do: Map.update(run, :events, [event], &(&1 ++ [event]))
+
+  defp kept(run, _runs, _event), do: run
 
   defp source(runs, run),
     do: run |> Map.get("message_ids", []) |> Enum.find_value(&runs.senders[&1])

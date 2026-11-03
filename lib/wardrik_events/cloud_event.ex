@@ -85,6 +85,15 @@ defmodule WardrikEvents.CloudEvent do
 
   def trace_id(_event), do: nil
 
+  @doc "Returns the span ID in the event's `traceparent`, or `nil`."
+  @spec span_id(t()) :: String.t() | nil
+  def span_id(%{
+        "traceparent" => "00-" <> <<_trace_id::binary-32, "-", span_id::binary-16, _rest::binary>>
+      }),
+      do: span_id
+
+  def span_id(_event), do: nil
+
   defp uuid_v7(time) do
     milliseconds = DateTime.to_unix(time, :millisecond)
     <<a::12, b::62, _rest::6>> = :crypto.strong_rand_bytes(10)

@@ -107,7 +107,7 @@ defmodule WardrikEvents.ViewsTest do
   end
 
   describe "timeline" do
-    test "starts again where the conversation was cleared" do
+    test "starts again where the conversation was cleared, and says so" do
       timeline =
         View.fold(
           [
@@ -119,6 +119,108 @@ defmodule WardrikEvents.ViewsTest do
         )
 
       assert Timeline.items(timeline) == []
+      assert Timeline.touched(timeline) == :reset
+      assert Timeline.current_run(timeline) == nil
+    end
+
+    test "names the latest run, whether it goes on, and the calls it waits on" do
+      timeline = View.fold([event("run.started", run())], Timeline)
+
+      assert %{id: "run-" <> @run} = Timeline.current_run(timeline)
+      assert Timeline.item(timeline, "run-" <> @run) == Timeline.current_run(timeline)
+      assert Timeline.running?(timeline)
+
+      timeline =
+        Timeline.handle_event(
+          event("run.interrupted", %{"interrupts" => [%{"id" => "a"}]}),
+          timeline
+        )
+
+      refute Timeline.running?(timeline)
+      assert Timeline.interrupts(timeline) == [%{"id" => "a"}]
+    end
+
+    test "folds what delegates say and do into a step of each, not the agent's answer" do
+      main = "b7ad6b7169203331"
+
+      on_span = fn event, span ->
+        event
+        |> Map.put("traceparent", "00-#{@run}-#{span}-01")
+        |> Map.put("parentspanid", main)
+      end
+
+      inside = fn event, span, parent ->
+        event
+        |> Map.put("traceparent", "00-#{@run}-#{span}-01")
+        |> Map.put("parentspanid", parent)
+      end
+
+      spec = "a000000000000001"
+      adoption = "b000000000000001"
+
+      started =
+        &on_span.(event("subagent.started", %{"prompt" => &1, "agent" => %{"name" => &2}}), &3)
+
+      timeline =
+        View.fold(
+          [
+            event("run.started", run()),
+            event("tool_call.started", tool("c1")),
+            started.("Find the spec", "spec", spec),
+            started.("Find adopters", "adoption", adoption),
+            inside.(
+              event("message.delta", %{"message" => %{"id" => "d"}, "delta" => "Hmm"}),
+              "c000000000000001",
+              spec
+            ),
+            inside.(
+              event("tool_call.started", tool("d1")),
+              "c000000000000002",
+              "c000000000000001"
+            ),
+            on_span.(event("subagent.progress", %{"tool_calls" => 1}), spec),
+            on_span.(
+              event("subagent.completed", %{
+                "message" => %{"parts" => [%{"type" => "text", "content" => "Component model."}]},
+                "tool_calls" => 2,
+                "cost" => %{"micro_usd" => 1_200}
+              }),
+              spec
+            ),
+            on_span.(
+              event("subagent.failed", %{"error" => %{"message" => "timed out"}}),
+              adoption
+            ),
+            event("tool_call.completed", Map.put(tool("c1"), "status", "ok")),
+            event("message.completed", %{
+              "message" => %{
+                "id" => "m",
+                "parts" => [%{"type" => "text", "content" => "Found it."}]
+              },
+              "cost" => %{"micro_usd" => 500}
+            }),
+            event("run.completed", run())
+          ],
+          Timeline
+        )
+
+      assert [run] = Timeline.items(timeline)
+
+      assert [
+               %{type: :tool, id: "tool-c1", status: :ok},
+               %{
+                 type: :subagent,
+                 name: "spec",
+                 prompt: "Find the spec",
+                 status: :ok,
+                 tools: 2,
+                 answer: "Component model."
+               },
+               %{type: :subagent, name: "adoption", status: :error, error: "timed out", tools: 0},
+               %{type: :text, text: "Found it."}
+             ] = run.steps
+
+      assert run.cost_micro_usd == 1_700
     end
 
     test "reads a run's thinking, answer and tool calls in order" do
@@ -288,6 +390,26 @@ defmodule WardrikEvents.ViewsTest do
 
       assert [%{tool_calls: 3, input_tokens: 40, output_tokens: 8, cost_micro_usd: 23}] =
                Runs.runs(runs)
+    end
+
+    test "keeps each run's events where asked, and adds totals up" do
+      events = [event("run.started", run()), event("tool_call.started", tool("a"))]
+
+      assert [%{events: ^events}] = events |> View.fold(Runs, events: true) |> Runs.runs()
+      refute events |> View.fold(Runs) |> Runs.runs() |> hd() |> Map.has_key?(:events)
+
+      totals = events |> View.fold(Runs) |> Runs.totals()
+      none = Runs.totals(Runs.init([]))
+
+      assert Runs.sum([totals, totals, none]) == %{
+               runs: 2,
+               failed: 0,
+               tool_calls: 2,
+               input_tokens: 0,
+               output_tokens: 0,
+               cost_micro_usd: 0,
+               last_at: @at
+             }
     end
 
     test "has nothing to say before a run, or of a run going on" do
