@@ -188,8 +188,9 @@ defmodule WardrikEvents.Timeline do
         Map.get(t.delegated, event["parentspanid"])
 
   defp delegated(t, data, event) do
-    id = "agent-" <> CloudEvent.span_id(event)
-    t = %{t | delegated: Map.put(t.delegated, CloudEvent.span_id(event), id)}
+    span = CloudEvent.span_id(event)
+    id = "agent-" <> span
+    t = %{t | delegated: Map.put(t.delegated, span, id)}
 
     update_run(t, event, fn run ->
       put_step(run, %{
@@ -206,8 +207,9 @@ defmodule WardrikEvents.Timeline do
   end
 
   defp in_delegate(t, step_id, type, data, event) do
-    t = %{t | delegated: Map.put(t.delegated, CloudEvent.span_id(event), step_id)}
-    own? = "agent-" <> CloudEvent.span_id(event) == step_id
+    span = CloudEvent.span_id(event)
+    t = %{t | delegated: Map.put(t.delegated, span, step_id)}
+    own? = "agent-" <> span == step_id
 
     case {type, own?} do
       {"wardrik.subagent.progress", true} ->
