@@ -88,8 +88,9 @@ defmodule WardrikEvents do
     loaded(settings, log)
 
     for cloud_event <- Encoder.encode(event, settings.deployment) do
-      publish(settings, log, cloud_event)
+      published = publish(settings, log, cloud_event)
       changed(settings, log, cloud_event, event.time, event.metadata[:span])
+      sunk(settings, published)
     end
 
     :ok
@@ -137,9 +138,9 @@ defmodule WardrikEvents do
         span: span
       )
 
-    publish(settings, log, cloud_event)
+    published = publish(settings, log, cloud_event)
     changed(settings, log, cloud_event, time, span)
-    :ok
+    sunk(settings, published)
   end
 
   @doc """
@@ -323,6 +324,10 @@ defmodule WardrikEvents do
       else: kept(settings, log, cloud_event)
   end
 
+  # Sinks come last, once what the event changed is in place for whoever they tell.
+  defp sunk(settings, {:kept, event}), do: Sink.deliver(settings.sinks, event)
+  defp sunk(_settings, _not_kept), do: :ok
+
   defp folded(view, {_log, _sequence, event} = entry, {state, cursor}),
     do: {view.handle_event(event, state), Reader.advanced(cursor, [entry])}
 
@@ -365,7 +370,7 @@ defmodule WardrikEvents do
     case Log.append(settings.store, log, cloud_event, heads: settings.heads) do
       {:ok, sequenced} ->
         Subscribers.publish(settings.group, log, sequenced)
-        Sink.deliver(settings.sinks, sequenced)
+        {:kept, sequenced}
 
       {:error, reason} ->
         Logger.error(
