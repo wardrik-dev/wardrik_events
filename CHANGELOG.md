@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `activity/2` survives a restart: an agent's activity is folded again from its log, so a run
+  waiting on a person still shows as waiting.
+
 ## 0.1.0-rc.2 (2026-11-02)
 
 ### Breaking

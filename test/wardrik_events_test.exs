@@ -46,6 +46,26 @@ defmodule WardrikEventsTest do
     assert sequences(events, ["agt_1"]) |> List.last() == "000000000003"
   end
 
+  test "rebuilds activity from the log after a restart", %{events: events, store: store} do
+    interrupted = %{"interrupts" => [%{"id" => "call_1"}]}
+    :ok = WardrikEvents.append(events, "agt_1", {"message.created", "agents/agt_1", %{}})
+    :ok = WardrikEvents.append(events, "agt_1", {"run.interrupted", "agents/agt_1", interrupted})
+    parked = WardrikEvents.activity(events, "agt_1")
+
+    stop_supervised!(WardrikEvents)
+    start_supervised!({WardrikEvents, name: events, store: store, deployment: "test"})
+
+    assert WardrikEvents.activity(events, "agt_1") == parked
+    assert %{"pending" => 1, "doing" => [%{"interrupts" => [%{"id" => "call_1"}]}]} = parked
+
+    stop_supervised!(WardrikEvents)
+    start_supervised!({WardrikEvents, name: events, store: store, deployment: "test"})
+    :ok = WardrikEvents.append(events, "agt_1", {"message.created", "agents/agt_1", %{}})
+
+    assert %{"pending" => 2, "doing" => [%{"type" => "wardrik.run.interrupted"}]} =
+             WardrikEvents.activity(events, "agt_1")
+  end
+
   test "sends live events to the log's stream, and keeps them nowhere", %{events: events} do
     :ok = WardrikEvents.subscribe(events, ["agt_1"])
     span = WardrikCore.Span.root()

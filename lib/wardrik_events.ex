@@ -42,6 +42,7 @@ defmodule WardrikEvents do
   alias WardrikEvents.Retention
   alias WardrikEvents.Subscribers
   alias WardrikEvents.Tail
+  alias WardrikEvents.View
 
   @typedoc "One conversation's log. `conversation` is `nil` for the agent's main one."
   @type log() :: {agent :: String.t(), conversation :: String.t() | nil}
@@ -78,6 +79,7 @@ defmodule WardrikEvents do
     settings = settings(events)
 
     log = {event.metadata.agent_id, event.metadata[:conversation]}
+    loaded(settings, log)
 
     for cloud_event <- Encoder.encode(event, settings.deployment) do
       publish(settings, log, cloud_event)
@@ -117,6 +119,7 @@ defmodule WardrikEvents do
     settings = settings(events)
     time = DateTime.utc_now()
     span = Keyword.get(opts, :span)
+    loaded(settings, log)
 
     cloud_event =
       CloudEvent.new(type,
@@ -214,12 +217,7 @@ defmodule WardrikEvents do
       #=> %{"doing" => [...], "since" => "2026-10-22T09:00:03.000000Z", "pending" => 1}
   """
   @spec activity(atom(), agent()) :: map()
-  def activity(events, agent) do
-    case :ets.lookup(settings(events).heads, {:activity, logged(agent)}) do
-      [{_key, _version, activity}] -> activity
-      [] -> Activity.init([])
-    end
-  end
+  def activity(events, agent), do: events |> settings() |> loaded(logged(agent))
 
   @doc """
   Folds a log's kept events into a `WardrikEvents.View`. Returns its state and the cursor after.
@@ -332,6 +330,14 @@ defmodule WardrikEvents do
           activity_changed(settings, log, activity, time, span)
         )
     end
+  end
+
+  # Activity is kept in memory, so after a restart it's folded again from the log. A writer loads
+  # it before appending, so the fold never counts the event being written twice.
+  defp loaded(settings, log) do
+    Heads.fetch_lazy(settings.heads, {:activity, log}, fn ->
+      settings |> Reader.all(log) |> Stream.map(&elem(&1, 2)) |> View.fold(Activity)
+    end)
   end
 
   defp activity_changed(settings, {agent, _conversation} = log, activity, time, span) do
