@@ -8,7 +8,7 @@ follow.
 ```elixir
 def deps do
   [
-    {:wardrik_events, "~> 0.1.0-rc.2"}
+    {:wardrik_events, "~> 0.1.0-rc.3"}
   ]
 end
 ```
