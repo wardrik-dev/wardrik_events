@@ -4,7 +4,7 @@ defmodule WardrikEvents.Subscribers do
   @all "all"
 
   @doc "Subscribes the calling process to `resources`. See `WardrikEvents.resources()`."
-  @spec subscribe(atom(), WardrikEvents.resources()) :: :ok
+  @spec subscribe(atom(), WardrikEvents.resources() | :all) :: :ok
   def subscribe(group, resources) do
     for {topic, covered} <- by_topic(resources) do
       :ok = Group.join(group, topic, %{covers: Enum.uniq(held(group, topic) ++ covered)})
@@ -14,7 +14,7 @@ defmodule WardrikEvents.Subscribers do
   end
 
   @doc "Unsubscribes the calling process from `resources`."
-  @spec unsubscribe(atom(), WardrikEvents.resources()) :: :ok
+  @spec unsubscribe(atom(), WardrikEvents.resources() | :all) :: :ok
   def unsubscribe(group, resources) do
     for {topic, covered} <- by_topic(resources) do
       case held(group, topic) -- covered do
