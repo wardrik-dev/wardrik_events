@@ -12,8 +12,6 @@ defmodule WardrikEvents.Reader do
 
   @doc "Returns the kept logs `resources` cover."
   @spec covered(WardrikStore.t(), WardrikEvents.resources()) :: [WardrikEvents.log()]
-  def covered(store, :all), do: Log.logs(store)
-
   def covered(store, resources) do
     resources
     |> Enum.flat_map(&logs(store, &1))

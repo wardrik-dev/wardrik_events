@@ -221,11 +221,14 @@ defmodule WardrikEventsTest do
       assert [] = sequences(events, [{"agt_1", "C2"}, {"agt", nil}])
     end
 
-    test "reads every log with :all", %{events: events} do
-      assert [_, _, _, _, _, _, _, _] = sequences(events, :all)
+    test "reads several agents together", %{events: events} do
+      assert [_, _, _, _, _, _, _, _] = sequences(events, ["agt_1", "agt_10", "agt_2"])
+    end
 
-      assert {:ok, head} = Cursor.decode(WardrikEvents.head(events, :all))
-      assert map_size(head) == 4
+    test "says which events aren't started" do
+      assert_raise ArgumentError, ~r/^MyApp.Missing isn't started/, fn ->
+        WardrikEvents.head(MyApp.Missing, ["agt_1"])
+      end
     end
 
     test "reads each log once, however many resources cover it", %{events: events} do
@@ -266,7 +269,7 @@ defmodule WardrikEventsTest do
         assert {:ok, %{^log => 1}} = Cursor.decode(WardrikEvents.head(events, [log]))
       end
 
-      assert {:ok, head} = Cursor.decode(WardrikEvents.head(events, :all))
+      assert {:ok, head} = Cursor.decode(WardrikEvents.head(events, @odd))
       assert head == Map.new(@odd, &{&1, 1})
       assert {:ok, ^head} = head |> Cursor.encode() |> Cursor.decode()
     end

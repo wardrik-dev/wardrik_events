@@ -22,7 +22,10 @@ defmodule WardrikEvents do
     * `"agt_1"` - the agent and all its conversations.
     * `{"agt_1", "C1"}` - one conversation.
 
-  Or `:all`, for every agent. Every function raises `ArgumentError` if `name` isn't started.
+  `subscribe/2` also takes `:all`, for every agent's events as they happen. To ship every event
+  out, to your warehouse or tracing, give the events a `WardrikEvents.Sink`.
+
+  Every function raises `ArgumentError` if `name` isn't started.
   """
 
   @behaviour WardrikCore.Events
@@ -40,6 +43,7 @@ defmodule WardrikEvents do
   alias WardrikEvents.Log
   alias WardrikEvents.Reader
   alias WardrikEvents.Retention
+  alias WardrikEvents.Sink
   alias WardrikEvents.Subscribers
   alias WardrikEvents.Tail
   alias WardrikEvents.View
@@ -50,8 +54,8 @@ defmodule WardrikEvents do
   @typedoc "An agent ID, for its main conversation, or a `t:log/0`."
   @type agent() :: String.t() | log()
 
-  @typedoc "The logs to read: agent IDs, each with all its conversations, and single logs; or `:all`."
-  @type resources() :: [String.t() | log()] | :all
+  @typedoc "The logs to read: agent IDs, each with all its conversations, and single logs."
+  @type resources() :: [String.t() | log()]
 
   @default_limit 100
   @max_limit 500
@@ -67,10 +71,12 @@ defmodule WardrikEvents do
     * `:store` - required. The `WardrikStore` to keep the logs in.
     * `:deployment` - the deployment's name in each event's `source`. `"local"` unless set.
     * `:retention` - days events are kept, or `:infinity`. `30` unless set.
+    * `:sinks` - `WardrikEvents.Sink`s, as `module` or `{module, opts}`, handed each event once
+      it's kept. `[]` unless set.
   """
   @spec start_link(keyword()) :: Supervisor.on_start()
   def start_link(opts) do
-    opts = Keyword.validate!(opts, [:name, :store, deployment: "local", retention: 30])
+    opts = Keyword.validate!(opts, [:name, :store, deployment: "local", retention: 30, sinks: []])
     Supervisor.start_link(__MODULE__, opts, name: Keyword.fetch!(opts, :name))
   end
 
@@ -137,13 +143,13 @@ defmodule WardrikEvents do
   end
 
   @doc """
-  Subscribes the calling process to `resources`. It receives `{WardrikEvents, log, event}`.
+  Subscribes the calling process to `resources`, or `:all`. It receives `{WardrikEvents, log, event}`.
   """
-  @spec subscribe(atom(), resources()) :: :ok
+  @spec subscribe(atom(), resources() | :all) :: :ok
   def subscribe(events, resources), do: Subscribers.subscribe(settings(events).group, resources)
 
-  @doc "Unsubscribes the calling process from `resources`."
-  @spec unsubscribe(atom(), resources()) :: :ok
+  @doc "Unsubscribes the calling process from `resources`, or `:all`."
+  @spec unsubscribe(atom(), resources() | :all) :: :ok
   def unsubscribe(events, resources),
     do: Subscribers.unsubscribe(settings(events).group, resources)
 
@@ -252,7 +258,10 @@ defmodule WardrikEvents do
   def record(events, change, opts \\ []) do
     opts = Keyword.validate!(opts, [:actor, :span, assumed_by: []])
 
-    with {:ok, _event} <- Audit.record(settings(events), change, opts), do: :ok
+    settings = settings(events)
+
+    with {:ok, recorded} <- Audit.record(settings, change, opts),
+         do: Sink.deliver(settings.sinks, recorded)
   end
 
   @doc """
@@ -291,6 +300,7 @@ defmodule WardrikEvents do
       audit: WardrikStore.scope(store, "wardrik_audit"),
       deployment: Keyword.fetch!(opts, :deployment),
       retention: Keyword.fetch!(opts, :retention),
+      sinks: Keyword.fetch!(opts, :sinks),
       heads: Module.concat(name, "Heads"),
       group: Module.concat(name, "Group")
     }
@@ -355,6 +365,7 @@ defmodule WardrikEvents do
     case Log.append(settings.store, log, cloud_event, heads: settings.heads) do
       {:ok, sequenced} ->
         Subscribers.publish(settings.group, log, sequenced)
+        Sink.deliver(settings.sinks, sequenced)
 
       {:error, reason} ->
         Logger.error(
