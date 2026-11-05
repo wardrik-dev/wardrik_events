@@ -72,10 +72,11 @@ defmodule WardrikEvents.Reader do
     end
   end
 
-  @doc "Streams every entry of `log`, oldest first."
-  @spec all(map(), WardrikEvents.log()) :: Enumerable.t(entry())
-  def all(settings, log) do
-    0
+  @doc "Streams every entry of `log` after the sequence number `:after`, oldest first."
+  @spec all(map(), WardrikEvents.log(), after: non_neg_integer()) :: Enumerable.t(entry())
+  def all(settings, log, args \\ [after: 0]) do
+    args
+    |> Keyword.fetch!(:after)
     |> Stream.unfold(&chunk(settings, log, &1))
     |> Stream.concat()
   end

@@ -46,7 +46,6 @@ defmodule WardrikEvents do
   alias WardrikEvents.Sink
   alias WardrikEvents.Subscribers
   alias WardrikEvents.Tail
-  alias WardrikEvents.View
 
   @typedoc "One conversation's log. `conversation` is `nil` for the agent's main one."
   @type log() :: {agent :: String.t(), conversation :: String.t() | nil}
@@ -85,11 +84,10 @@ defmodule WardrikEvents do
     settings = settings(events)
 
     log = {event.metadata.agent_id, event.metadata[:conversation]}
-    loaded(settings, log)
 
     for cloud_event <- Encoder.encode(event, settings.deployment) do
       published = publish(settings, log, cloud_event)
-      changed(settings, log, cloud_event, event.time, event.metadata[:span])
+      changed(settings, log, published, event.time, event.metadata[:span])
       sunk(settings, published)
     end
 
@@ -126,7 +124,6 @@ defmodule WardrikEvents do
     settings = settings(events)
     time = DateTime.utc_now()
     span = Keyword.get(opts, :span)
-    loaded(settings, log)
 
     cloud_event =
       CloudEvent.new(type,
@@ -139,7 +136,7 @@ defmodule WardrikEvents do
       )
 
     published = publish(settings, log, cloud_event)
-    changed(settings, log, cloud_event, time, span)
+    changed(settings, log, published, time, span)
     sunk(settings, published)
   end
 
@@ -331,14 +328,16 @@ defmodule WardrikEvents do
   defp folded(view, {_log, _sequence, event} = entry, {state, cursor}),
     do: {view.handle_event(event, state), Reader.advanced(cursor, [entry])}
 
-  defp changed(settings, log, cloud_event, time, span) do
-    fold = &Activity.handle_event(cloud_event, &1)
-
-    case Heads.update(settings.heads, {:activity, log}, initial: Activity.init([]), with: fold) do
-      {same, same} ->
+  # Only kept events change what an agent is doing, so activity is a fold of the log.
+  defp changed(settings, log, {:kept, event}, time, span) do
+    case Heads.update(settings.heads, {:activity, log},
+           initial: {0, Activity.init([])},
+           with: &advanced(settings, log, event, &1)
+         ) do
+      {{_before, same}, {_after, same}} ->
         :ok
 
-      {_before, activity} ->
+      {_before, {_sequence, activity}} ->
         Subscribers.publish(
           settings.group,
           log,
@@ -347,13 +346,45 @@ defmodule WardrikEvents do
     end
   end
 
-  # Activity is kept in memory, so after a restart it's folded again from the log. A writer loads
-  # it before appending, so the fold never counts the event being written twice.
-  defp loaded(settings, log) do
-    Heads.fetch_lazy(settings.heads, {:activity, log}, fn ->
-      settings |> Reader.all(log) |> Stream.map(&elem(&1, 2)) |> View.fold(Activity)
-    end)
+  defp changed(_settings, _log, _not_kept, _time, _span), do: :ok
+
+  # The cache holds the activity with the last sequence it folded. Another node can write to the
+  # log too, as when an agent moves, so a gap is read from the log.
+  defp advanced(settings, log, event, {sequence, activity} = cached) do
+    if Log.sequence(event) == sequence + 1,
+      do: {sequence + 1, Activity.handle_event(event, activity)},
+      else: caught_up(settings, log, cached)
   end
+
+  defp loaded(settings, log) do
+    {_before, {_sequence, activity}} =
+      Heads.update(settings.heads, {:activity, log},
+        initial: {0, Activity.init([])},
+        with: &caught_up(settings, log, &1)
+      )
+
+    activity
+  end
+
+  defp caught_up(settings, log, {sequence, _activity} = cached) do
+    case Reader.entries(settings, log, after: sequence, limit: 1) do
+      [] ->
+        cached
+
+      [{_log, _sequence, %{"type" => "wardrik.events.dropped"}}] ->
+        refolded(settings, log)
+
+      [_newer] ->
+        settings |> Reader.all(log, after: sequence) |> Enum.reduce(cached, &taken/2)
+    end
+  end
+
+  # Retention dropped events this node never folded, so fold what's left, as after a restart.
+  defp refolded(settings, log),
+    do: settings |> Reader.all(log) |> Enum.reduce({0, Activity.init([])}, &taken/2)
+
+  defp taken({_log, sequence, event}, {_sequence, activity}),
+    do: {sequence, Activity.handle_event(event, activity)}
 
   defp activity_changed(settings, {agent, _conversation} = log, activity, time, span) do
     CloudEvent.new("activity.changed",

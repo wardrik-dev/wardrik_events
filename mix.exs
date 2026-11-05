@@ -4,7 +4,7 @@ defmodule WardrikEvents.MixProject do
   def project do
     [
       app: :wardrik_events,
-      version: "0.1.0-rc.3",
+      version: "0.1.0-rc.4",
       elixir: "~> 1.20",
       description:
         "Each agent's events as CloudEvents: a log to read back, and a stream to follow.",
@@ -70,11 +70,11 @@ defmodule WardrikEvents.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      sibling(:wardrik_core, "~> 0.1.0-rc.3"),
-      sibling(:wardrik_store, "~> 0.1.0-rc.3"),
-      sibling(:wardrik_protocol, "~> 0.1.0-rc.3"),
+      sibling(:wardrik_core, "~> 0.1.0-rc.4"),
+      sibling(:wardrik_store, "~> 0.1.0-rc.4"),
+      sibling(:wardrik_protocol, "~> 0.1.0-rc.4"),
       {:group, "~> 0.2"},
-      {:mimic, "~> 2.4", only: :test},
+      {:mimic, "~> 2.5", only: :test},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:ex_slop, "~> 0.4", only: [:dev, :test], runtime: false},

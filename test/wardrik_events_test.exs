@@ -66,6 +66,52 @@ defmodule WardrikEventsTest do
              WardrikEvents.activity(events, "agt_1")
   end
 
+  test "follows a log another node writes to, as when an agent moves", %{
+    events: events,
+    store: store
+  } do
+    other = elsewhere(events, store)
+    interrupted = %{"interrupts" => [%{"id" => "call_1"}]}
+
+    :ok = WardrikEvents.append(events, "agt_1", {"message.created", "agents/agt_1", %{}})
+    :ok = WardrikEvents.append(events, "agt_1", {"run.interrupted", "agents/agt_1", interrupted})
+
+    assert %{"doing" => [%{"interrupts" => _interrupts}]} =
+             WardrikEvents.activity(events, "agt_1")
+
+    assert WardrikEvents.activity(other, "agt_1") == WardrikEvents.activity(events, "agt_1")
+
+    :ok = WardrikEvents.append(other, "agt_1", {"run.completed", "agents/agt_1", %{}})
+    assert %{"doing" => []} = WardrikEvents.activity(events, "agt_1")
+
+    :ok = WardrikEvents.append(events, "agt_1", {"message.created", "agents/agt_1", %{}})
+    assert %{"pending" => 2} = WardrikEvents.activity(events, "agt_1")
+    assert WardrikEvents.activity(other, "agt_1") == WardrikEvents.activity(events, "agt_1")
+  end
+
+  test "folds what retention kept when it dropped events this node never read", %{
+    events: events,
+    store: store
+  } do
+    other = elsewhere(events, store)
+    :ok = WardrikEvents.append(events, "agt_1", {"message.created", "agents/agt_1", %{}})
+    assert %{"pending" => 1} = WardrikEvents.activity(events, "agt_1")
+
+    :ok = WardrikEvents.append(other, "agt_1", {"message.created", "agents/agt_1", %{}})
+    WardrikEvents.trim(other, DateTime.add(DateTime.utc_now(), 1))
+    :ok = WardrikEvents.append(other, "agt_1", {"message.created", "agents/agt_1", %{}})
+    :ok = WardrikEvents.append(other, "agt_1", {"message.created", "agents/agt_1", %{}})
+
+    assert %{"pending" => 2} = WardrikEvents.activity(events, "agt_1")
+  end
+
+  # A second events instance over the same store stands in for another node.
+  defp elsewhere(events, store) do
+    other = :"#{events} elsewhere"
+    start_supervised!({WardrikEvents, name: other, store: store, deployment: "test"}, id: other)
+    other
+  end
+
   test "sends live events to the log's stream, and keeps them nowhere", %{events: events} do
     :ok = WardrikEvents.subscribe(events, ["agt_1"])
     span = WardrikCore.Span.root()

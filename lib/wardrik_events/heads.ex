@@ -25,23 +25,6 @@ defmodule WardrikEvents.Heads do
   def update(heads, key, args),
     do: updated(heads, key, Keyword.fetch!(args, :initial), Keyword.fetch!(args, :with))
 
-  @doc """
-  Returns the value under `key`. With none, puts `fun.()` there first.
-
-  If another process puts a value first, returns that one.
-  """
-  @spec fetch_lazy(atom(), term(), (-> term())) :: term()
-  def fetch_lazy(heads, key, fun) do
-    case :ets.lookup(heads, key) do
-      [{^key, _version, value}] ->
-        value
-
-      [] ->
-        swapped?(heads, key, 0, fun.())
-        fetch_lazy(heads, key, fun)
-    end
-  end
-
   defp updated(heads, key, initial, fun) do
     {version, value} = current(heads, key, initial)
     updated = fun.(value)

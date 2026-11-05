@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0-rc.4 (2026-11-05)
+
+- `activity/2` is right on every node. Activity is kept with the last sequence it folded, and
+  events another node wrote, as when an agent moves or a trigger fires elsewhere, are read from
+  the log first. A read costs one store lookup more.
+- Requires wardrik_core, wardrik_store and wardrik_protocol 0.1.0-rc.4.
+
 ## 0.1.0-rc.3 (2026-11-03)
 
 ### Views

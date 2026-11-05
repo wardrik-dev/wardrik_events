@@ -65,6 +65,10 @@ defmodule WardrikEvents.Log do
         do: log
   end
 
+  @doc "Returns a kept event's sequence number."
+  @spec sequence(CloudEvent.t()) :: pos_integer()
+  def sequence(%{"sequence" => sequence}), do: String.to_integer(sequence)
+
   @doc "Drops the log's events written before `cutoff`."
   @spec trim(WardrikStore.t(), WardrikEvents.log(), DateTime.t()) :: :ok | {:error, term()}
   def trim(store, log, cutoff) do
