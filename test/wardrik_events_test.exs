@@ -184,6 +184,25 @@ defmodule WardrikEventsTest do
     assert sequences(events, ["agt_1"]) == ["000000000001", "000000000002", "000000000003"]
   end
 
+  test "keeps trying while other writers take the next number, as nodes writing at once do", %{
+    events: events
+  } do
+    taken = :counters.new(1, [])
+
+    stub(WardrikStore, :put, fn store, key, value, opts ->
+      if String.starts_with?(key, "events/") and :counters.get(taken, 1) < 3 do
+        :counters.add(taken, 1, 1)
+        {:error, :conflict}
+      else
+        call_original(WardrikStore, :put, [store, key, value, opts])
+      end
+    end)
+
+    stopped(events, "agt_1")
+
+    assert sequences(events, ["agt_1"]) == ["000000000001"]
+  end
+
   test "keeps nothing for a log it couldn't list", %{events: events} do
     failing_once()
 

@@ -4,7 +4,7 @@ defmodule WardrikEvents.MixProject do
   def project do
     [
       app: :wardrik_events,
-      version: "0.1.0-rc.4",
+      version: "0.1.0-rc.5",
       elixir: "~> 1.20",
       description:
         "Each agent's events as CloudEvents: a log to read back, and a stream to follow.",

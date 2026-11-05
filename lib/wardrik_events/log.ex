@@ -16,7 +16,7 @@ defmodule WardrikEvents.Log do
   @spec append(WardrikStore.t(), WardrikEvents.log(), CloudEvent.t(), heads: :ets.table()) ::
           {:ok, CloudEvent.t()} | {:error, term()}
   def append(store, log, event, args),
-    do: append(store, Keyword.fetch!(args, :heads), log, event, 1)
+    do: appended(store, Keyword.fetch!(args, :heads), log, event)
 
   @doc "Returns the sequence number of the log's last event. If every event was dropped, returns the last dropped one's."
   @spec last(WardrikStore.t(), WardrikEvents.log()) :: non_neg_integer()
@@ -80,7 +80,7 @@ defmodule WardrikEvents.Log do
     end
   end
 
-  defp append(store, heads, log, event, retries) do
+  defp appended(store, heads, log, event) do
     with {:ok, sequence} <- next(store, heads, log) do
       sequenced = CloudEvent.sequenced(event, sequence)
 
@@ -90,15 +90,15 @@ defmodule WardrikEvents.Log do
 
         {:error, reason} ->
           :ets.delete(heads, head_key(store, log))
-          retried(reason, store, heads, log, event, retries)
+          retried(reason, store, heads, log, event)
       end
     end
   end
 
-  defp retried(:conflict, store, heads, log, event, retries) when retries > 0,
-    do: append(store, heads, log, event, retries - 1)
-
-  defp retried(reason, _store, _heads, _log, _event, _retries), do: {:error, reason}
+  # A conflict means another writer, on this node or another, took the sequence number, so the
+  # log moved on. Count from the log again and write at the next one.
+  defp retried(:conflict, store, heads, log, event), do: appended(store, heads, log, event)
+  defp retried(reason, _store, _heads, _log, _event), do: {:error, reason}
 
   defp next(store, heads, log) do
     with :ok <- loaded(store, heads, log),

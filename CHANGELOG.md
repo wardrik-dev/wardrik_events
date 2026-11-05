@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.0-rc.5 (2026-11-05)
+
+- An event or audit change is written however many writers take the next number first. It gave
+  up after one, so nodes writing to the audit at once failed.
+
 ## 0.1.0-rc.4 (2026-11-05)
 
 - `activity/2` is right on every node. Activity is kept with the last sequence it folded, and
