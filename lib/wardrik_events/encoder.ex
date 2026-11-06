@@ -257,12 +257,19 @@ defmodule WardrikEvents.Encoder do
 
   defp interrupt(reason, call) do
     {kind, message} = interruption(reason)
+    decided = decided(reason, call)
 
     %{"id" => (call && call.id) || "model", "reason" => kind, "message" => message}
     |> Value.put("tool_call_id", call && call.id)
-    |> Value.put("name", call && call.name)
+    |> Value.put("name", decided && decided.name)
+    |> Value.put("arguments", decided && decided.arguments)
     |> Value.put("labels", labels(reason))
   end
+
+  # The call a person decides on: the one a policy asked about, which may be made inside the call
+  # that parked, such as a coding agent's request.
+  defp decided(%{call: %{name: _name} = decided}, _call), do: decided
+  defp decided(_reason, call), do: call
 
   defp labels(%{labels: [_ | _] = labels}), do: labels
   defp labels(_reason), do: nil

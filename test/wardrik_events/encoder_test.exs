@@ -153,12 +153,23 @@ defmodule WardrikEvents.EncoderTest do
 
     test "list what they wait on", %{turn: turn} do
       parked = [
-        {%ToolCall{id: "c1", name: "books__pay"},
+        {%ToolCall{id: "c1", name: "books__pay", arguments: %{"amount" => 1200}},
          {:park, %{interrupt: "tool_approval", message: "Pay $1,200?", labels: ["outside"]}}},
         {%ToolCall{id: "c2", name: "github__list"},
          {:park, %WardrikCore.Authorization{url: "https://x.test/1", credential: "github"}}},
         {%ToolCall{id: "c3", name: "mail__send"}, {:park, :in_doubt}},
-        {%ToolCall{id: "c4", name: "echo"}, {:ok, "done"}}
+        {%ToolCall{id: "c4", name: "echo"}, {:ok, "done"}},
+        {%ToolCall{id: "c5", name: "claude", arguments: %{"task" => "Fix it."}},
+         {:park,
+          %{
+            interrupt: "tool_approval",
+            message: "claude/execute needs your approval.",
+            call: %ToolCall{
+              id: "c5:t1",
+              name: "claude__execute",
+              arguments: %{"command" => "mix test"}
+            }
+          }}}
       ]
 
       %{"data" => %{"interrupts" => interrupts}} =
@@ -177,6 +188,7 @@ defmodule WardrikEvents.EncoderTest do
                  "reason" => "tool_approval",
                  "message" => "Pay $1,200?",
                  "name" => "books__pay",
+                 "arguments" => %{"amount" => 1200},
                  "labels" => ["outside"]
                },
                %{
@@ -184,7 +196,13 @@ defmodule WardrikEvents.EncoderTest do
                  "reason" => "authorization",
                  "message" => "Sign in to github at https://x.test/1."
                },
-               %{"id" => "c3", "reason" => "in_doubt", "tool_call_id" => "c3"}
+               %{"id" => "c3", "reason" => "in_doubt", "tool_call_id" => "c3"},
+               %{
+                 "id" => "c5",
+                 "tool_call_id" => "c5",
+                 "name" => "claude__execute",
+                 "arguments" => %{"command" => "mix test"}
+               }
              ] = interrupts
 
       model = %{interrupt: "model_approval", message: "Over budget."}
@@ -197,6 +215,7 @@ defmodule WardrikEvents.EncoderTest do
                one(core([:turn, :stop], %{kind: :run, span: turn, outcome: :park, reason: model}))
 
       refute Map.has_key?(asked, "tool_call_id")
+      refute Map.has_key?(asked, "arguments")
       refute Map.has_key?(asked, "labels")
     end
 

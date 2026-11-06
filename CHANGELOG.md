@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `run.interrupted` interrupts carry `arguments`. `name` and `arguments` are the call a person decides on: the call a policy asked about, if it differs from the call that parked.
+
 ## 0.1.0-rc.5 (2026-11-05)
 
 - An event or audit change is written however many writers take the next number first. It gave
