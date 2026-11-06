@@ -8,20 +8,26 @@ follow.
 ```elixir
 def deps do
   [
-    {:wardrik_events, "~> 0.1.0-rc.3"}
+    {:wardrik_events, "~> 0.1.0-rc.5"}
   ]
 end
 ```
 
-## Start it
+## Start the event log
+
+Run in a fresh IEx session:
 
 ```elixir
+Mix.install([{:wardrik_events, "~> 0.1.0-rc.5"}])
+
 store = WardrikStore.ETS.new(name: MyApp.Store)
 
 children = [
   {WardrikStore, store},
   {WardrikEvents, name: MyApp.Events, store: store, deployment: "acme-prod"}
 ]
+
+{:ok, _supervisor} = Supervisor.start_link(children, strategy: :one_for_one)
 ```
 
 * Give it to each [WardrikCore](https://hexdocs.pm/wardrik_core) agent as
@@ -60,15 +66,17 @@ An event:
 
 Enum.each(stream, fn {event, cursor} ->
   IO.puts(event["type"])
-  save(WardrikEvents.Cursor.encode(cursor))
+  IO.inspect(WardrikEvents.Cursor.encode(cursor), label: "cursor")
 end)
 ```
 
 * Without `:after`, the stream starts at the next event written.
 * It also carries live events, like `wardrik.message.delta`. These are never kept.
-* No event is missed or repeated between reading back and following.
+* Persisted events are not missed or repeated when switching from replay to live delivery. Live deltas are not replayed.
 
-## Follow it from your app
+## Process events in your app
+
+Integration example: implement `MyApp.Cursors`, `MyApp.Runs.row/1`, and the `agent_runs` table in your app.
 
 ```elixir
 defmodule MyApp.Runs do
@@ -88,7 +96,9 @@ defmodule MyApp.Runs do
   def cursor(_listener), do: MyApp.Cursors.get("runs")
 end
 
-children = [{MyApp.Runs, events: MyApp.Events, resources: ["agt_1"], types: ["wardrik.run.completed"]}]
+children = [
+  {MyApp.Runs, events: MyApp.Events, resources: ["agt_1"], types: ["wardrik.run.completed"]}
+]
 ```
 
 * Save `listener.cursor` with your work. After a restart, the listener reads on from `cursor/1`.
@@ -117,7 +127,8 @@ end
 
 ```elixir
 WardrikEvents.activity(MyApp.Events, "agt_1")
-#=> %{"doing" => [%{"type" => "wardrik.tool_call.started", ...}], "since" => "...", "pending" => 1}
+
+# => %{"doing" => [%{"type" => "wardrik.tool_call.started", ...}], "since" => "...", "pending" => 1}
 
 {timeline, _cursor} = WardrikEvents.view(MyApp.Events, "agt_1", WardrikEvents.Timeline)
 WardrikEvents.Timeline.items(timeline)

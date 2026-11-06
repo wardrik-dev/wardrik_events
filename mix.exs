@@ -70,6 +70,7 @@ defmodule WardrikEvents.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:nimble_options, "~> 1.1"},
       sibling(:wardrik_core, "~> 0.1.0-rc.4"),
       sibling(:wardrik_store, "~> 0.1.0-rc.4"),
       sibling(:wardrik_protocol, "~> 0.1.0-rc.4"),

@@ -2,6 +2,9 @@ defmodule WardrikEvents do
   @moduledoc """
   Keeps each agent's events as CloudEvents, in logs you can read back and follow.
 
+  Application integration fragment. Start the required processes before calling these functions.
+  See the [package README](https://github.com/wardrik-dev/wardrik_events#readme) for complete setup.
+
       children = [
         {WardrikStore, store},
         {WardrikEvents, name: MyApp.Events, store: store, deployment: "acme-prod"}
@@ -59,6 +62,31 @@ defmodule WardrikEvents do
   @default_limit 100
   @max_limit 500
 
+  @start_options NimbleOptions.new!(
+                   name: [type: :atom, required: true, doc: "The registered event log name."],
+                   store: [
+                     type: :any,
+                     required: true,
+                     doc: "The WardrikStore used for event logs."
+                   ],
+                   deployment: [
+                     type: :string,
+                     default: "local",
+                     doc: "The deployment name in each event's source."
+                   ],
+                   retention: [
+                     type: {:or, [:non_neg_integer, {:in, [:infinity]}]},
+                     default: 30,
+                     doc: "Days to retain events, or :infinity."
+                   ],
+                   sinks: [
+                     type: {:list, :any},
+                     default: [],
+                     doc:
+                       "WardrikEvents.Sink modules or {module, opts} entries called after storage."
+                   ]
+                 )
+
   @doc """
   Starts the events.
 
@@ -66,16 +94,19 @@ defmodule WardrikEvents do
 
   ## Options
 
-    * `:name` - required. What the events are reached by.
-    * `:store` - required. The `WardrikStore` to keep the logs in.
-    * `:deployment` - the deployment's name in each event's `source`. `"local"` unless set.
-    * `:retention` - days events are kept, or `:infinity`. `30` unless set.
-    * `:sinks` - `WardrikEvents.Sink`s, as `module` or `{module, opts}`, handed each event once
-      it's kept. `[]` unless set.
+  #{NimbleOptions.docs(@start_options)}
   """
   @spec start_link(keyword()) :: Supervisor.on_start()
   def start_link(opts) do
-    opts = Keyword.validate!(opts, [:name, :store, deployment: "local", retention: 30, sinks: []])
+    allowed =
+      Enum.map(@start_options.schema, fn {key, settings} ->
+        case Keyword.fetch(settings, :default) do
+          {:ok, default} -> {key, default}
+          :error -> key
+        end
+      end)
+
+    opts = Keyword.validate!(opts, allowed)
     Supervisor.start_link(__MODULE__, opts, name: Keyword.fetch!(opts, :name))
   end
 
