@@ -8,7 +8,7 @@ follow.
 ```elixir
 def deps do
   [
-    {:wardrik_events, "~> 0.1.0-rc.5"}
+    {:wardrik_events, "~> 0.1.0-rc.6"}
   ]
 end
 ```
@@ -18,7 +18,7 @@ end
 Run in a fresh IEx session:
 
 ```elixir
-Mix.install([{:wardrik_events, "~> 0.1.0-rc.5"}])
+Mix.install([{:wardrik_events, "~> 0.1.0-rc.6"}])
 
 store = WardrikStore.ETS.new(name: MyApp.Store)
 

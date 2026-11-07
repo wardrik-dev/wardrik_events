@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.0-rc.6 (2026-11-06)
 
+- Requires `wardrik_protocol` 0.1.0-rc.5.
 - `run.interrupted` interrupts carry `arguments`. `name` and `arguments` are the call a person decides on: the call a policy asked about, if it differs from the call that parked.
 
 ## 0.1.0-rc.5 (2026-11-05)
